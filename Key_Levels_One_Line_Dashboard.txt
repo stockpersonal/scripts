@@ -1,14 +1,14 @@
 //@version=6
 indicator("Key Levels – One-Line Dashboard", overlay=true, max_labels_count=500)
 
-// ==========================================================
+// ==============================
 // USER INPUTS
-// ==========================================================
+// ==============================
 buffer            = input.float(0.20, "Alert Buffer ($)")
 tf                = input.string("D", "Key Level Base Timeframe")
 bars_hold         = input.int(2, "Bars Level Must Hold", minval=1)
 use_wick_retest   = input.bool(true, "Use Wick-Only Retest")
-lookbackMonths    = input.int(12, "Lookback (Months)", minval=1, maxval=120)
+lookbackMonths    = input.int(18, "Lookback (Months)", minval=1, maxval=120)
 
 zz_depth          = input.int(8, "ZigZag Pivot Depth (bars)", minval=3)
 max_pivots_stored = input.int(200, "Max pivots stored", minval=20, maxval=2000)
@@ -22,17 +22,20 @@ max_retracement_w2 = input.float(0.90, "Max W2 retrace", step=0.01)
 min_ext_w3         = input.float(0.8, "Min W3 extension (ratio)", step=0.01)
 max_retracement_w4 = input.float(0.95, "Max W4 retracement ratio", step=0.01)
 
-// ==========================================================
+// Decimal format for display (2 decimals)
+fmt = "#.##"
+
+// ==============================
 // HTF DATA (Base TF)
-// ==========================================================
+// ==============================
 h = request.security(syminfo.tickerid, tf, high)
 l = request.security(syminfo.tickerid, tf, low)
 c = request.security(syminfo.tickerid, tf, close)
 o = request.security(syminfo.tickerid, tf, open)
 
-// ==========================================================
+// ==============================
 // LOOKBACK FILTER (X MONTHS -> ms & bars approximation)
-// ==========================================================
+// ==============================
 ms_per_day = 24 * 60 * 60 * 1000
 lookback_ms = lookbackMonths * 30 * ms_per_day
 start_time = timenow - lookback_ms
@@ -41,29 +44,26 @@ in_range = time >= start_time
 // For ta.highest/lowest we approximate lookback in bars
 barsLookback = math.max(10, lookbackMonths * 21)  // ~21 trading days per month
 
-// ==========================================================
-// PRIMARY RANGE (for fallback levels)
-// ==========================================================
+// ==============================
+// PRIMARY RANGE (fallback formulas)
+// ==============================
 range_high  = ta.highest(in_range ? h : na, 5000)
 range_low   = ta.lowest(in_range ? l : na, 5000)
 range_close = c
 
-// ==========================================================
-// PRIMARY KEY LEVELS (fallback formulas)
-// ==========================================================
-L1 = math.round((range_high + range_low) / 2, 2)
-L2 = math.round((range_high + range_close) / 2, 2)
-L3 = math.round((range_low + range_close) / 2, 2)
-Support = math.round(range_low, 2)
+// fallback primary key levels (kept for EW-found case)
+L1_base = math.round((range_high + range_low) / 2, 2)
+L2_base = math.round((range_high + range_close) / 2, 2)
+L3_base = math.round((range_low + range_close) / 2, 2)
 
 hlDist = range_high - range_low
-T1_fb = math.round(range_close + hlDist * 0.25, 2)
-T2_fb = math.round(range_close + hlDist * 0.50, 2)
-T3_fb = math.round(range_close + hlDist * 0.75, 2)
+T1_fb_base = math.round(range_close + hlDist * 0.25, 2)
+T2_fb_base = math.round(range_close + hlDist * 0.50, 2)
+T3_fb_base = math.round(range_close + hlDist * 0.75, 2)
 
-// ==========================================================
-// MULTI-TIMEFRAME LEVEL ENGINE (returns L1/L2/L3 + Support + fallback Targets)
-// ==========================================================
+// ==============================
+// MULTI-TIMEFRAME LEVEL ENGINE
+// ==============================
 getLevels(tf_src) =>
     hh = request.security(syminfo.tickerid, tf_src, ta.highest(high, barsLookback))
     ll = request.security(syminfo.tickerid, tf_src, ta.lowest(low, barsLookback))
@@ -82,9 +82,9 @@ getLevels(tf_src) =>
 [W_L1, W_L2, W_L3, W_Support, W_T1, W_T2, W_T3, W_Range] = getLevels("W")
 [D_L1, D_L2, D_L3, D_Support, D_T1, D_T2, D_T3, D_Range] = getLevels("D")
 
-// ==========================================================
+// ==============================
 // ZIGZAG PIVOT COLLECTION (for EW detection)
-// ==========================================================
+// ==============================
 ph = ta.pivothigh(high, zz_depth, zz_depth)
 pl = ta.pivotlow(low, zz_depth, zz_depth)
 
@@ -112,10 +112,10 @@ while array.size(piv_time) > max_pivots_stored
 safe_get(arr, i) =>
     array.size(arr) > i ? array.get(arr, i) : na
 
-// ==========================================================
-// ELLIOTT-WAVE-LIKE DETECTION (conservative, uses last 5 alternating pivots)
-// ==========================================================
-// typed EW vars (fixed hard_invalid declared here)
+// ==============================
+// ELLIOTT-WAVE-LIKE DETECTION
+// ==============================
+// Declare and initialize EW vars
 var float EW1 = na
 var float EW2 = na
 var float EW3 = na
@@ -124,9 +124,9 @@ var float EW5 = na
 var bool  EW_found = false
 var string EW_dir = "NONE"
 var float EW_invalidation = na
-var float hard_invalid = na   // <<< TYPED DECLARATION (fixed)
+var float hard_invalid = na
 
-// reset per-bar
+// reset per bar
 EW_found := false
 EW1 := na
 EW2 := na
@@ -139,7 +139,6 @@ hard_invalid := na
 
 pv_count = array.size(piv_val)
 if pv_count >= 5
-    // take last 5 pivots as contiguous block (chronological)
     start_idx = pv_count - 5
     v0 = safe_get(piv_val, start_idx)
     v1 = safe_get(piv_val, start_idx + 1)
@@ -156,7 +155,6 @@ if pv_count >= 5
     downPattern = (h0 == 1) and (h1 == 0) and (h2 == 1) and (h3 == 0) and (h4 == 1)
 
     if upPattern
-        // map to waves: low(v0)->high(v1)->low(v2)->high(v3)->low(v4)
         w1_low = v0
         w1_high = v1
         w2_low = v2
@@ -167,25 +165,21 @@ if pv_count >= 5
         wave3_len = math.abs(w3_high - w2_low)
         retr2 = (w1_high - w2_low) / (w1_high - w1_low + 0.0000001)
         ext3 = wave3_len / (wave1_len + 0.0000001)
-        retr4 = (w3_high - w4_low) / (w3_high - w2_low + 0.0000001)
 
         valid_w2 = retr2 >= min_retracement_w2 and retr2 <= max_retracement_w2
         valid_w3 = ext3 >= min_ext_w3
-        valid_w4 = retr4 <= max_retracement_w4
 
         if valid_w2 and valid_w3
             EW1 := math.round(w1_high, 2)
             EW2 := math.round(w2_low, 2)
             EW3 := math.round(w3_high, 2)
             EW4 := math.round(w4_low, 2)
-            EW5 := math.round(w4_low + (w1_high - w1_low) * 1.0, 2)  // conservative proj
+            EW5 := math.round(w4_low + (w1_high - w1_low) * 1.0, 2)
             EW_found := true
             EW_dir := "UP"
-            // invalidation: if future price drops below EW2 (C below wave2 low) then structure invalid
             EW_invalidation := math.round(EW2, 2)
 
     else if downPattern
-        // map to waves: high(v0)->low(v1)->high(v2)->low(v3)->high(v4)
         w1_high = v0
         w1_low  = v1
         w2_high = v2
@@ -196,11 +190,9 @@ if pv_count >= 5
         wave3_len = math.abs(w3_low - w2_high)
         retr2 = (w2_high - w1_low) / (w1_high - w1_low + 0.0000001)
         ext3 = wave3_len / (wave1_len + 0.0000001)
-        retr4 = (w4_high - w3_low) / (w2_high - w3_low + 0.0000001)
 
         valid_w2 = retr2 >= min_retracement_w2 and retr2 <= max_retracement_w2
         valid_w3 = ext3 >= min_ext_w3
-        valid_w4 = retr4 <= max_retracement_w4
 
         if valid_w2 and valid_w3
             EW1 := math.round(w1_low, 2)
@@ -210,13 +202,11 @@ if pv_count >= 5
             EW5 := math.round(w4_high - (w1_high - w1_low) * 1.0, 2)
             EW_found := true
             EW_dir := "DOWN"
-            // invalidation: if price rises above EW2 (B high) then structure invalid
             EW_invalidation := math.round(EW2, 2)
 
-// ==========================================================
-// FIB RETRACEMENT BOX & EXTENSIONS (analyst: 0.5,0.618,0.786,0.886 ; 1.272/1.618/2.0)
-// (values always present as na until EW_found true)
-// ==========================================================
+// ==============================
+// FIB RETRACE & EXT (from EW if found)
+// ==============================
 var float fib50 = na
 var float fib618 = na
 var float fib786 = na
@@ -249,18 +239,81 @@ if EW_found
         ext1618 := math.round(swing_low - swing_range * 1.618, 2)
         ext2000 := math.round(swing_low - swing_range * 2.000, 2)
 
-// ==========================================================
-// Invalidation & Kill-levels
-// - EW_invalidation already set above (EW2 level)
-// - Also compute a 'hard invalidation' using pivot that created EW1/EW2 area (buffered)
-// ==========================================================
-if EW_found
-    hard_invalid := EW_dir == "UP" ? math.round(EW1 + (EW1 - EW2) * 0.05, 2) : math.round(EW1 - (EW2 - EW1) * 0.05, 2)
-// This 'hard_invalid' is a conservative guard: for UP, price above EW1 + small buffer invalidates bearish interpretation
+// ==============================
+// FALLBACK: Fibonacci Pivot S1 per TF (using previous completed period [1])
+// Pivot = (H + L + C) / 3 ; S1 = Pivot - (H - L) * 0.382
+// Use previous completed period values (index 1) to avoid in-progress period skew.
+// ==============================
+M_h = request.security(syminfo.tickerid, "M", high[1])
+M_l = request.security(syminfo.tickerid, "M", low[1])
+M_c = request.security(syminfo.tickerid, "M", close[1])
+pivot_M = (M_h + M_l + M_c) / 3.0
+M_S1 = math.round(pivot_M - (M_h - M_l) * 0.382, 2)
 
-// ==========================================================
-// Candle patterns / retest / functions (original logic)
-// ==========================================================
+W_h = request.security(syminfo.tickerid, "W", high[1])
+W_l = request.security(syminfo.tickerid, "W", low[1])
+W_c = request.security(syminfo.tickerid, "W", close[1])
+pivot_W = (W_h + W_l + W_c) / 3.0
+W_S1 = math.round(pivot_W - (W_h - W_l) * 0.382, 2)
+
+D_h = request.security(syminfo.tickerid, "D", high[1])
+D_l = request.security(syminfo.tickerid, "D", low[1])
+D_c = request.security(syminfo.tickerid, "D", close[1])
+pivot_D = (D_h + D_l + D_c) / 3.0
+D_S1 = math.round(pivot_D - (D_h - D_l) * 0.382, 2)
+
+// Fallback targets based on last close (user chosen)
+T1_fallback = math.round(c * 1.272, 2)
+T2_fallback = math.round(c * 1.618, 2)
+T3_fallback = math.round(c * 2.000, 2)
+
+// ==============================
+// FINAL DISPLAY LEVELS
+// If EW_found -> use base Ls (range-based) and EW ext for targets.
+// If EW NOT found -> use Fibonacci pivots (M/W/D S1) and fallback targets.
+// Then sort L1/L2/L3 ascending before display.
+// ==============================
+// declare finals so we can assign safely
+float final_L1 = na
+float final_L2 = na
+float final_L3 = na
+float final_T1 = na
+float final_T2 = na
+float final_T3 = na
+
+final_L1 := EW_found ? L1_base : M_S1
+final_L2 := EW_found ? L2_base : W_S1
+final_L3 := EW_found ? L3_base : D_S1
+
+final_T1 := EW_found and not na(ext1272) ? ext1272 : T1_fallback
+final_T2 := EW_found and not na(ext1618) ? ext1618 : T2_fallback
+final_T3 := EW_found and not na(ext2000) ? ext2000 : T3_fallback
+
+// Ensure no NaN: replace any na with reasonable fallback (last close)
+final_L1 := na(final_L1) ? math.round(c, 2) : final_L1
+final_L2 := na(final_L2) ? math.round(c, 2) : final_L2
+final_L3 := na(final_L3) ? math.round(c, 2) : final_L3
+
+// Sort ascending into display variables
+float L1_disp = na
+float L2_disp = na
+float L3_disp = na
+
+// create and populate array
+float[] lvls_arr = array.new_float(0)
+array.push(lvls_arr, final_L1)
+array.push(lvls_arr, final_L2)
+array.push(lvls_arr, final_L3)
+array.sort(lvls_arr, order.ascending)
+
+// assign sorted values
+L1_disp := array.get(lvls_arr, 0)
+L2_disp := array.get(lvls_arr, 1)
+L3_disp := array.get(lvls_arr, 2)
+
+// ==============================
+// TREND & PATTERNS (unchanged)
+// ==============================
 has_3_prior = bar_index >= 3
 bear_engulf = has_3_prior and open[2] < close[2] and close[1] < open[1] and open[1] >= close[2] and close[1] <= open[2]
 bull_engulf = has_3_prior and open[2] > close[2] and close[1] > open[1] and open[1] <= close[2] and close[1] >= open[2]
@@ -289,165 +342,113 @@ holds(level) =>
 
 break_up(level) => c > level and c[1] <= level
 
-hold_L1 = holds(L1)
-hold_L2 = holds(L2)
-hold_L3 = holds(L3)
+hold_L1 = holds(L1_base)
+hold_L2 = holds(L2_base)
+hold_L3 = holds(L3_base)
 
-bk_L1 = break_up(L1)
-bk_L2 = break_up(L2)
-bk_L3 = break_up(L3)
+bk_L1 = break_up(L1_base)
+bk_L2 = break_up(L2_base)
+bk_L3 = break_up(L3_base)
 
-enter_L1 = bk_L1 and retest_up(L1) and hold_L1 and barstate.isconfirmed
-enter_L2 = bk_L2 and retest_up(L2) and hold_L2 and barstate.isconfirmed
-enter_L3 = bk_L3 and retest_up(L3) and hold_L3 and barstate.isconfirmed
+enter_L1 = bk_L1 and retest_up(L1_base) and hold_L1 and barstate.isconfirmed
+enter_L2 = bk_L2 and retest_up(L2_base) and hold_L2 and barstate.isconfirmed
+enter_L3 = bk_L3 and retest_up(L3_base) and hold_L3 and barstate.isconfirmed
 
 trendDir = c > o ? "BULLISH" : c < o ? "BEARISH" : "NEUTRAL"
 trendColor = c > o ? color.rgb(0,180,60) : c < o ? color.rgb(200,40,40) : color.rgb(255,165,0)
 
-ready_long  = (trendDir == "BULLISH" and c > L1) or enter_L1 or enter_L2 or enter_L3 or (near(L1) and bull_pattern)
-ready_short = (trendDir == "BEARISH" and c < L3) or (near(L3) and bear_pattern)
+ready_long  = (trendDir == "BULLISH" and c > L1_disp) or enter_L1 or enter_L2 or enter_L3 or (near(L1_disp) and bull_pattern)
+ready_short = (trendDir == "BEARISH" and c < L3_disp) or (near(L3_disp) and bear_pattern)
 ready_text  = ready_long ? "LONG READY" : ready_short ? "SHORT READY" : "WAIT"
 ready_color = ready_long ? color.rgb(0,180,60) : ready_short ? color.rgb(200,40,40) : color.rgb(255,165,0)
 
-// ==========================================================
-// SORT L1/L2/L3 so they display in correct order (ascending)
-// ==========================================================
-arr_lvls = array.new_float()
-array.push(arr_lvls, L1)
-array.push(arr_lvls, L2)
-array.push(arr_lvls, L3)
-array.sort(arr_lvls, order.ascending)
-
-L1 := array.get(arr_lvls, 0)
-L2 := array.get(arr_lvls, 1)
-L3 := array.get(arr_lvls, 2)
-
-// ==========================================================
-// DASHBOARD (Option A styling: orange header, green ready, blue support removed)
-// ==========================================================
-// table size: rows adjusted to new layout; columns = 1
-var table dashTbl = table.new(position.bottom_right, 1, 15, border_width=1)
+// ==============================
+// DASHBOARD (no Base Support row; shows T1/T2/T3 & MTF rows optional)
+// ==============================
+var table dashTbl = table.new(position.bottom_right, 1, 14, border_width=1)
 
 if barstate.islast
-    // header
     table.cell(dashTbl, 0, 0, syminfo.ticker + " | Key Levels", text_color=color.white, bgcolor=color.rgb(255,140,0))
-    // ready
     table.cell(dashTbl, 0, 1, "Ready: " + ready_text, text_color=color.white, bgcolor=ready_color)
-    // trend
     table.cell(dashTbl, 0, 2, "Trend: " + trendDir, text_color=color.white, bgcolor=trendColor)
-    // base Ls (sorted)
-    table.cell(dashTbl, 0, 3, "Base L1/L2/L3: " + str.tostring(L1) + " / " + str.tostring(L2) + " / " + str.tostring(L3), text_color=color.white, bgcolor=color.rgb(0,150,70))
-    // Targets row (NEW) — show fallback targets
-    table.cell(dashTbl, 0, 4, "Targets T1/T2/T3: " + str.tostring(T1_fb) + " / " + str.tostring(T2_fb) + " / " + str.tostring(T3_fb), text_color=color.white, bgcolor=color.rgb(0,120,200))
+    table.cell(dashTbl, 0, 3, "Base L1/L2/L3: " + str.tostring(L1_disp, fmt) + " / " + str.tostring(L2_disp, fmt) + " / " + str.tostring(L3_disp, fmt), text_color=color.white, bgcolor=color.rgb(0,150,70))
+    // Targets row (shows EW ext if EW found, fallback otherwise)
+    srcTag = EW_found ? " (EW ext)" : " (fallback)"
+    table.cell(dashTbl, 0, 4, "Targets T1/T2/T3" + srcTag + ": " + str.tostring(final_T1, fmt) + " / " + str.tostring(final_T2, fmt) + " / " + str.tostring(final_T3, fmt), text_color=color.white, bgcolor=color.rgb(0,120,200))
     // MTF rows (optional)
     if show_MTF_rows
-        table.cell(dashTbl, 0, 5, "Daily L1/L2/L3: " + str.tostring(D_L1) + " / " + str.tostring(D_L2) + " / " + str.tostring(D_L3), text_color=color.white)
-        table.cell(dashTbl, 0, 6, "Daily Supp/Ts: " + str.tostring(D_Support) + " | " + str.tostring(D_T1) + " / " + str.tostring(D_T2) + " / " + str.tostring(D_T3), text_color=color.white)
-        table.cell(dashTbl, 0, 7, "Weekly L1/L2/L3: " + str.tostring(W_L1) + " / " + str.tostring(W_L2) + " / " + str.tostring(W_L3), text_color=color.white)
-        table.cell(dashTbl, 0, 8, "Weekly Supp/Ts: " + str.tostring(W_Support) + " | " + str.tostring(W_T1) + " / " + str.tostring(W_T2) + " / " + str.tostring(W_T3), text_color=color.white)
-        table.cell(dashTbl, 0, 9, "Monthly L1/L2/L3: " + str.tostring(M_L1) + " / " + str.tostring(M_L2) + " / " + str.tostring(M_L3), text_color=color.white)
-        table.cell(dashTbl, 0, 10, "Monthly Supp/Ts: " + str.tostring(M_Support) + " | " + str.tostring(M_T1) + " / " + str.tostring(M_T2) + " / " + str.tostring(M_T3), text_color=color.white)
+        table.cell(dashTbl, 0, 5, "Daily L1/L2/L3: " + str.tostring(D_L1, fmt) + " / " + str.tostring(D_L2, fmt) + " / " + str.tostring(D_L3, fmt), text_color=color.white)
+        table.cell(dashTbl, 0, 6, "Daily Supp/Ts: " + str.tostring(D_Support, fmt) + " | " + str.tostring(D_T1, fmt) + " / " + str.tostring(D_T2, fmt) + " / " + str.tostring(D_T3, fmt), text_color=color.white)
+        table.cell(dashTbl, 0, 7, "Weekly L1/L2/L3: " + str.tostring(W_L1, fmt) + " / " + str.tostring(W_L2, fmt) + " / " + str.tostring(W_L3, fmt), text_color=color.white)
+        table.cell(dashTbl, 0, 8, "Weekly Supp/Ts: " + str.tostring(W_Support, fmt) + " | " + str.tostring(W_T1, fmt) + " / " + str.tostring(W_T2, fmt) + " / " + str.tostring(W_T3, fmt), text_color=color.white)
+        table.cell(dashTbl, 0, 9, "Monthly L1/L2/L3: " + str.tostring(M_L1, fmt) + " / " + str.tostring(M_L2, fmt) + " / " + str.tostring(M_L3, fmt), text_color=color.white)
+        table.cell(dashTbl, 0, 10, "Monthly Supp/Ts: " + str.tostring(M_Support, fmt) + " | " + str.tostring(M_T1, fmt) + " / " + str.tostring(M_T2, fmt) + " / " + str.tostring(M_T3, fmt), text_color=color.white)
     // EW & Fib box if found (optional)
     if show_EW_in_dash
         if EW_found
-            table.cell(dashTbl, 0, 11, "EW Dir: " + EW_dir + " | EW1:" + (na(EW1) ? "N/A" : str.tostring(EW1)) + " EW2:" + (na(EW2) ? "N/A" : str.tostring(EW2)) + " EW3:" + (na(EW3) ? "N/A" : str.tostring(EW3)), text_color=color.white, bgcolor=color.rgb(40,80,120))
-            table.cell(dashTbl, 0, 12, "Retrace box: 0.5=" + str.tostring(fib50) + " 0.618=" + str.tostring(fib618) + " 0.786=" + str.tostring(fib786) + " 0.886=" + str.tostring(fib886), text_color=color.white, bgcolor=color.rgb(20,60,120))
-            table.cell(dashTbl, 0, 13, "Ext targets: 1.272=" + str.tostring(ext1272) + " 1.618=" + str.tostring(ext1618) + " 2.0=" + str.tostring(ext2000), text_color=color.white, bgcolor=color.rgb(0,140,150))
-            table.cell(dashTbl, 0, 14, "Invalidation: " + (na(EW_invalidation) ? "N/A" : str.tostring(EW_invalidation)) + " | HardInvalid: " + (na(hard_invalid) ? "N/A" : str.tostring(hard_invalid)), text_color=color.white, bgcolor=color.rgb(120,60,60))
+            table.cell(dashTbl, 0, 11, "EW Dir: " + EW_dir + " | EW1:" + str.tostring(EW1, fmt) + " EW2:" + str.tostring(EW2, fmt) + " EW3:" + str.tostring(EW3, fmt), text_color=color.white, bgcolor=color.rgb(40,80,120))
+            table.cell(dashTbl, 0, 12, "Retrace box: 0.5=" + str.tostring(fib50, fmt) + " 0.618=" + str.tostring(fib618, fmt) + " 0.786=" + str.tostring(fib786, fmt) + " 0.886=" + str.tostring(fib886, fmt), text_color=color.white, bgcolor=color.rgb(20,60,120))
+            table.cell(dashTbl, 0, 13, "Ext targets: 1.272=" + str.tostring(ext1272, fmt) + " 1.618=" + str.tostring(ext1618, fmt) + " 2.0=" + str.tostring(ext2000, fmt), text_color=color.white, bgcolor=color.rgb(0,140,150))
         else
             table.cell(dashTbl, 0, 11, "EW: None detected", text_color=color.white, bgcolor=color.rgb(80,40,40))
             table.cell(dashTbl, 0, 12, "Retrace box: N/A", text_color=color.white)
             table.cell(dashTbl, 0, 13, "Ext targets: N/A", text_color=color.white)
-            table.cell(dashTbl, 0, 14, "Invalidation: N/A", text_color=color.white)
 
-// ==========================================================
-// ALERT SYSTEM (unified)
-// ==========================================================
+// ==============================
+// ALERT SYSTEM (unified) - unchanged (uses final levels where needed)
+// ==============================
 trigger = false
 msg = ""
 
-// Approach + pattern alerts
-if near(L1) and bull_pattern
+// Approach + pattern alerts (use display L1/L2/L3)
+if near(L1_disp) and bull_pattern
     trigger := true
-    msg := "Approaching L1 w/ Pattern " + str.tostring(L1)
-if near(L2) and bull_pattern
+    msg := "Approaching L1 w/ Pattern " + str.tostring(L1_disp, fmt)
+if near(L2_disp) and bull_pattern
     trigger := true
-    msg := "Approaching L2 w/ Pattern " + str.tostring(L2)
-if near(L3) and bull_pattern
+    msg := "Approaching L2 w/ Pattern " + str.tostring(L2_disp, fmt)
+if near(L3_disp) and bull_pattern
     trigger := true
-    msg := "Approaching L3 w/ Pattern " + str.tostring(L3)
+    msg := "Approaching L3 w/ Pattern " + str.tostring(L3_disp, fmt)
 
-// Breakouts (base)
-if ta.crossover(c, L1)
+// Breakouts (base) — still using base Ls for breakout detection
+if ta.crossover(c, L1_base)
     trigger := true
-    msg := "ENTRY Break L1 " + str.tostring(L1)
-if ta.crossover(c, L2)
+    msg := "ENTRY Break L1 " + str.tostring(L1_base, fmt)
+if ta.crossover(c, L2_base)
     trigger := true
-    msg := "ENTRY Break L2 " + str.tostring(L2)
-if ta.crossover(c, L3)
+    msg := "ENTRY Break L2 " + str.tostring(L2_base, fmt)
+if ta.crossover(c, L3_base)
     trigger := true
-    msg := "ENTRY Break L3 " + str.tostring(L3)
+    msg := "ENTRY Break L3 " + str.tostring(L3_base, fmt)
 
 // Advanced entries
 if enter_L1
     trigger := true
-    msg := "ADV ENTRY Break+Retest+Hold L1 " + str.tostring(L1)
+    msg := "ADV ENTRY Break+Retest+Hold L1 " + str.tostring(L1_base, fmt)
 if enter_L2
     trigger := true
-    msg := "ADV ENTRY Break+Retest+Hold L2 " + str.tostring(L2)
+    msg := "ADV ENTRY Break+Retest+Hold L2 " + str.tostring(L2_base, fmt)
 if enter_L3
     trigger := true
-    msg := "ADV ENTRY Break+Retest+Hold L3 " + str.tostring(L3)
+    msg := "ADV ENTRY Break+Retest+Hold L3 " + str.tostring(L3_base, fmt)
 
-// Targets (Base fallback)
-if c >= T1_fb
+// Targets (final targets)
+if c >= final_T1
     trigger := true
-    msg := "TARGET 1 Hit (fallback) " + str.tostring(T1_fb)
-if c >= T2_fb
+    msg := "TARGET 1 Hit " + str.tostring(final_T1, fmt)
+if c >= final_T2
     trigger := true
-    msg := "TARGET 2 Hit (fallback) " + str.tostring(T2_fb)
-if c >= T3_fb
+    msg := "TARGET 2 Hit " + str.tostring(final_T2, fmt)
+if c >= final_T3
     trigger := true
-    msg := "TARGET 3 Hit (fallback) " + str.tostring(T3_fb)
+    msg := "TARGET 3 Hit " + str.tostring(final_T3, fmt)
 
-// Support (Base)
-if c <= Support
-    trigger := true
-    msg := "Price at or below Support " + str.tostring(Support)
-
-// EW-related alerts (if found)
-if EW_found
-    // price inside retracement band (any)
-    in_retrace_band = EW_dir == "UP" ? (c <= fib50 and c >= fib886) : (c >= fib50 and c <= fib886)
-    if in_retrace_band
+// EW invalidation
+if not na(EW_invalidation)
+    if (EW_dir == "UP" and c < EW_invalidation) or (EW_dir == "DOWN" and c > EW_invalidation)
         trigger := true
-        msg := "Price inside EW retracement box: " + (EW_dir == "UP" ? (str.tostring(fib618) + " - " + str.tostring(fib886)) : (str.tostring(fib886) + " - " + str.tostring(fib618)))
-    // extension hits
-    if EW_dir == "UP"
-        if c >= ext1272
-            trigger := true
-            msg := "EW extension hit 1.272 " + str.tostring(ext1272)
-        if c >= ext1618
-            trigger := true
-            msg := "EW extension hit 1.618 " + str.tostring(ext1618)
-        if c >= ext2000
-            trigger := true
-            msg := "EW extension hit 2.0 " + str.tostring(ext2000)
-    else
-        if c <= ext1272
-            trigger := true
-            msg := "EW extension hit -1.272 " + str.tostring(ext1272)
-        if c <= ext1618
-            trigger := true
-            msg := "EW extension hit -1.618 " + str.tostring(ext1618)
-        if c <= ext2000
-            trigger := true
-            msg := "EW extension hit -2.0 " + str.tostring(ext2000)
-    // invalidation hit
-    if not na(EW_invalidation)
-        if (EW_dir == "UP" and c < EW_invalidation) or (EW_dir == "DOWN" and c > EW_invalidation)
-            trigger := true
-            msg := "EW invalidation level hit: " + str.tostring(EW_invalidation)
+        msg := "EW invalidation level hit: " + str.tostring(EW_invalidation, fmt)
 
 // final alert
 if trigger
