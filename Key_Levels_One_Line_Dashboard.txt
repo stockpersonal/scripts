@@ -83,17 +83,23 @@ bk_L3 = break_up(L3)
 entry_ready = (bk_L1 and hold_L1) or (bk_L2 and hold_L2) or (bk_L3 and hold_L3)
 
 // ===============================
-// DASHBOARD (TABLE STYLE)
+// TREND DIRECTION
+// ===============================
+trendDir = c > o ? "BULLISH" : c < o ? "BEARISH" : "NEUTRAL"
+trendColor = c > o ? color.rgb(0,180,60) : c < o ? color.rgb(200,40,40) : color.rgb(255,165,0)
+
+// ===============================
+// DASHBOARD (TABLE STYLE) — SINGLE LINE CELLS
 // ===============================
 var table dashTbl = table.new(position.top_right, 1, 6)
 
 if barstate.islast
     table.cell(dashTbl, 0, 0, syminfo.ticker + " | Key Levels", text_color=color.white, bgcolor=color.rgb(255,140,0))
-    table.cell(dashTbl, 0, 1, "L1:" + str.tostring(L1) + " | L2:" + str.tostring(L2) + " | L3:" + str.tostring(L3), text_color=color.white, bgcolor=color.rgb(0,150,70))
-    table.cell(dashTbl, 0, 2, "Support: " + str.tostring(Support), text_color=color.white, bgcolor=color.rgb(0,120,200))
-    table.cell(dashTbl, 0, 3, "T1:" + str.tostring(T1) + " | T2:" + str.tostring(T2) + " | T3:" + str.tostring(T3), text_color=color.white, bgcolor=color.rgb(0,170,200))
-    table.cell(dashTbl, 0, 4, "Range: " + str.tostring(hlDist, "#.##") + " | Close: " + str.tostring(c), text_color=color.black, bgcolor=color.rgb(255,235,0))
-    table.cell(dashTbl, 0, 5, "READY: " + (entry_ready ? "YES" : "NO"), text_color=(entry_ready ? color.white : color.black), bgcolor=(entry_ready ? color.rgb(0,200,0) : color.rgb(255,70,70)))
+    table.cell(dashTbl, 0, 1, "Trend: " + trendDir, text_color=color.white, bgcolor=trendColor)
+    table.cell(dashTbl, 0, 2, "L1: " + str.tostring(L1) + " | L2: " + str.tostring(L2) + " | L3: " + str.tostring(L3), text_color=color.white, bgcolor=color.rgb(0,150,70))
+    table.cell(dashTbl, 0, 3, "Support: " + str.tostring(Support), text_color=color.white, bgcolor=color.rgb(0,120,200))
+    table.cell(dashTbl, 0, 4, "T1: " + str.tostring(T1) + " | T2: " + str.tostring(T2) + " | T3: " + str.tostring(T3), text_color=color.white, bgcolor=color.rgb(0,170,200))
+    table.cell(dashTbl, 0, 5, "Range: " + str.tostring(hlDist, "#.##") + " | Close: " + str.tostring(c), text_color=color.black, bgcolor=color.rgb(255,235,0))
 
 // ===============================
 // ALERT LOGIC
