@@ -1,0 +1,159 @@
+//@version=6
+indicator("Key Levels – One-Line Dashboard", overlay=true, max_labels_count=500)
+
+// ===============================
+// INPUTS
+// ===============================
+buffer     = input.float(0.20, "Alert Buffer ($)")
+tf         = input.string("D", "Timeframe")
+bars_hold  = input.int(2, "Bars Level Must Hold", minval=1)
+use_wick_retest = input.bool(true, "Use Wick-Only Retest")
+
+// ===============================
+// HTF DATA
+// ===============================
+h = request.security(syminfo.tickerid, tf, high)
+l = request.security(syminfo.tickerid, tf, low)
+c = request.security(syminfo.tickerid, tf, close)
+o = request.security(syminfo.tickerid, tf, open)
+
+// ===============================
+// LEVEL CALCULATIONS
+// ===============================
+L1 = math.round((h + l) / 2, 2)
+L2 = math.round((h + c) / 2, 2)
+L3 = math.round((l + c) / 2, 2)
+Support = math.round(l, 2)
+
+hlDist = h - l
+T1 = math.round(c + hlDist * 0.25, 2)
+T2 = math.round(c + hlDist * 0.50, 2)
+T3 = math.round(c + hlDist * 0.75, 2)
+
+// ===============================
+// CANDLE PATTERNS
+// ===============================
+has_3_prior = bar_index >= 3
+
+bull_engulf = has_3_prior and open[2] > close[2] and close[1] > open[1] and open[1] <= close[2] and close[1] >= open[2]
+bear_engulf = has_3_prior and open[2] < close[2] and close[1] < open[1] and open[1] >= close[2] and close[1] <= open[2]
+
+hlDist1 = high[1] - low[1]
+hammer = has_3_prior and (high[1] - math.max(open[1], close[1])) <= (hlDist1 * 0.25) and (math.min(open[1], close[1]) - low[1]) >= (hlDist1 * 0.50)
+shooting = has_3_prior and (math.max(open[1], close[1]) - low[1]) <= (hlDist1 * 0.25) and (high[1] - math.min(open[1], close[1])) >= (hlDist1 * 0.50)
+
+morning = has_3_prior and close[3] < open[3] and close[2] < open[2] and close[1] > (open[3] + close[3]) / 2.0
+evening = has_3_prior and close[3] > open[3] and close[2] > open[2] and close[1] < (open[3] + close[3]) / 2.0
+
+bull_pattern = bull_engulf or hammer or morning
+bear_pattern = bear_engulf or shooting or evening
+
+// ===============================
+// RETEST CONDITIONS
+// ===============================
+wick_retest_up(level) => low <= level and close > level and open > level
+normal_retest_up(level) => low <= level and close >= level
+retest_up(level) => use_wick_retest ? wick_retest_up(level) : normal_retest_up(level)
+
+// ===============================
+// FUNCTIONS
+// ===============================
+near(x) => math.abs(c - x) <= buffer
+
+holds(level) =>
+    cond = true
+    for i = 0 to bars_hold - 1
+        cond := cond and c[i] >= level
+    cond
+
+break_up(level) => c > level and c[1] <= level
+
+// ===============================
+// PRECOMPUTED LEVEL LOGIC
+// ===============================
+hold_L1 = holds(L1)
+hold_L2 = holds(L2)
+hold_L3 = holds(L3)
+
+bk_L1 = break_up(L1)
+bk_L2 = break_up(L2)
+bk_L3 = break_up(L3)
+
+// Ready-To-Trade Logic
+entry_ready = (bk_L1 and hold_L1) or (bk_L2 and hold_L2) or (bk_L3 and hold_L3)
+
+// ===============================
+// DASHBOARD (TABLE STYLE)
+// ===============================
+var table dashTbl = table.new(position.top_right, 1, 6)
+
+if barstate.islast
+    table.cell(dashTbl, 0, 0, syminfo.ticker + " | Key Levels", text_color=color.white, bgcolor=color.rgb(255,140,0))
+    table.cell(dashTbl, 0, 1, "L1:" + str.tostring(L1) + " | L2:" + str.tostring(L2) + " | L3:" + str.tostring(L3), text_color=color.white, bgcolor=color.rgb(0,150,70))
+    table.cell(dashTbl, 0, 2, "Support: " + str.tostring(Support), text_color=color.white, bgcolor=color.rgb(0,120,200))
+    table.cell(dashTbl, 0, 3, "T1:" + str.tostring(T1) + " | T2:" + str.tostring(T2) + " | T3:" + str.tostring(T3), text_color=color.white, bgcolor=color.rgb(0,170,200))
+    table.cell(dashTbl, 0, 4, "Range: " + str.tostring(hlDist, "#.##") + " | Close: " + str.tostring(c), text_color=color.black, bgcolor=color.rgb(255,235,0))
+    table.cell(dashTbl, 0, 5, "READY: " + (entry_ready ? "YES" : "NO"), text_color=(entry_ready ? color.white : color.black), bgcolor=(entry_ready ? color.rgb(0,200,0) : color.rgb(255,70,70)))
+
+// ===============================
+// ALERT LOGIC
+// ===============================
+trigger = false
+msg = ""
+
+// APPROACH + PATTERN
+if near(L1) and bull_pattern
+    trigger := true
+    msg := "Approaching L1 w/ Pattern " + str.tostring(L1)
+if near(L2) and bull_pattern
+    trigger := true
+    msg := "Approaching L2 w/ Pattern " + str.tostring(L2)
+if near(L3) and bull_pattern
+    trigger := true
+    msg := "Approaching L3 w/ Pattern " + str.tostring(L3)
+
+// SIMPLE BREAKOUTS
+if ta.crossover(c, L1)
+    trigger := true
+    msg := "ENTRY Break L1 " + str.tostring(L1)
+if ta.crossover(c, L2)
+    trigger := true
+    msg := "ENTRY Break L2 " + str.tostring(L2)
+if ta.crossover(c, L3)
+    trigger := true
+    msg := "ENTRY Break L3 " + str.tostring(L3)
+
+// ADVANCED ENTRIES
+enter_L1 = bk_L1 and retest_up(L1) and hold_L1 and barstate.isconfirmed
+enter_L2 = bk_L2 and retest_up(L2) and hold_L2 and barstate.isconfirmed
+enter_L3 = bk_L3 and retest_up(L3) and hold_L3 and barstate.isconfirmed
+
+if enter_L1
+    trigger := true
+    msg := "ADV ENTRY Break+Retest(" + (use_wick_retest ? "Wick" : "Normal") + ")+Hold L1 " + str.tostring(L1)
+if enter_L2
+    trigger := true
+    msg := "ADV ENTRY Break+Retest(" + (use_wick_retest ? "Wick" : "Normal") + ")+Hold L2 " + str.tostring(L2)
+if enter_L3
+    trigger := true
+    msg := "ADV ENTRY Break+Retest(" + (use_wick_retest ? "Wick" : "Normal") + ")+Hold L3 " + str.tostring(L3)
+
+// TARGETS
+if c >= T1
+    trigger := true
+    msg := "TARGET 1 Hit " + str.tostring(T1)
+if c >= T2
+    trigger := true
+    msg := "TARGET 2 Hit " + str.tostring(T2)
+if c >= T3
+    trigger := true
+    msg := "TARGET 3 Hit " + str.tostring(T3)
+
+// STOP
+if c < L3
+    trigger := true
+    msg := "STOP Proxy — Lost L3"
+
+// SEND ALERT
+if trigger
+    alert(msg, alert.freq_once_per_bar)
