@@ -79,8 +79,12 @@ bk_L1 = break_up(L1)
 bk_L2 = break_up(L2)
 bk_L3 = break_up(L3)
 
-// Ready-To-Trade Logic
-entry_ready = (bk_L1 and hold_L1) or (bk_L2 and hold_L2) or (bk_L3 and hold_L3)
+// ===============================
+// ADVANCED ENTRY CONDITIONS
+// ===============================
+enter_L1 = bk_L1 and retest_up(L1) and hold_L1 and barstate.isconfirmed
+enter_L2 = bk_L2 and retest_up(L2) and hold_L2 and barstate.isconfirmed
+enter_L3 = bk_L3 and retest_up(L3) and hold_L3 and barstate.isconfirmed
 
 // ===============================
 // TREND DIRECTION
@@ -89,17 +93,26 @@ trendDir = c > o ? "BULLISH" : c < o ? "BEARISH" : "NEUTRAL"
 trendColor = c > o ? color.rgb(0,180,60) : c < o ? color.rgb(200,40,40) : color.rgb(255,165,0)
 
 // ===============================
+// READY TO TRADE
+// ===============================
+ready_long = (trendDir == "BULLISH" and c > L1) or enter_L1 or enter_L2 or enter_L3 or (near(L1) and bull_pattern)
+ready_short = (trendDir == "BEARISH" and c < L3) or (near(L3) and bear_pattern)
+ready_text = ready_long ? "LONG READY" : ready_short ? "SHORT READY" : "WAIT"
+ready_color = ready_long ? color.rgb(0,180,60) : ready_short ? color.rgb(200,40,40) : color.rgb(255,165,0)
+
+// ===============================
 // DASHBOARD (TABLE STYLE) — SINGLE LINE CELLS
 // ===============================
-var table dashTbl = table.new(position.top_right, 1, 6)
+var table dashTbl = table.new(position.top_right, 1, 7)
 
 if barstate.islast
     table.cell(dashTbl, 0, 0, syminfo.ticker + " | Key Levels", text_color=color.white, bgcolor=color.rgb(255,140,0))
-    table.cell(dashTbl, 0, 1, "Trend: " + trendDir, text_color=color.white, bgcolor=trendColor)
-    table.cell(dashTbl, 0, 2, "L1: " + str.tostring(L1) + " | L2: " + str.tostring(L2) + " | L3: " + str.tostring(L3), text_color=color.white, bgcolor=color.rgb(0,150,70))
-    table.cell(dashTbl, 0, 3, "Support: " + str.tostring(Support), text_color=color.white, bgcolor=color.rgb(0,120,200))
-    table.cell(dashTbl, 0, 4, "T1: " + str.tostring(T1) + " | T2: " + str.tostring(T2) + " | T3: " + str.tostring(T3), text_color=color.white, bgcolor=color.rgb(0,170,200))
-    table.cell(dashTbl, 0, 5, "Range: " + str.tostring(hlDist, "#.##") + " | Close: " + str.tostring(c), text_color=color.black, bgcolor=color.rgb(255,235,0))
+    table.cell(dashTbl, 0, 1, "Ready: " + ready_text, text_color=color.white, bgcolor=ready_color)
+    table.cell(dashTbl, 0, 2, "Trend: " + trendDir, text_color=color.white, bgcolor=trendColor)
+    table.cell(dashTbl, 0, 3, "L1: " + str.tostring(L1) + " | L2: " + str.tostring(L2) + " | L3: " + str.tostring(L3), text_color=color.white, bgcolor=color.rgb(0,150,70))
+    table.cell(dashTbl, 0, 4, "Support: " + str.tostring(Support), text_color=color.white, bgcolor=color.rgb(0,120,200))
+    table.cell(dashTbl, 0, 5, "T1:" + str.tostring(T1) + " | T2:" + str.tostring(T2) + " | T3:" + str.tostring(T3), text_color=color.white, bgcolor=color.rgb(0,170,200))
+    table.cell(dashTbl, 0, 6, "Range:" + str.tostring(hlDist, "#.##") + " | Close:" + str.tostring(c), text_color=color.black, bgcolor=color.rgb(255,235,0))
 
 // ===============================
 // ALERT LOGIC
@@ -130,10 +143,6 @@ if ta.crossover(c, L3)
     msg := "ENTRY Break L3 " + str.tostring(L3)
 
 // ADVANCED ENTRIES
-enter_L1 = bk_L1 and retest_up(L1) and hold_L1 and barstate.isconfirmed
-enter_L2 = bk_L2 and retest_up(L2) and hold_L2 and barstate.isconfirmed
-enter_L3 = bk_L3 and retest_up(L3) and hold_L3 and barstate.isconfirmed
-
 if enter_L1
     trigger := true
     msg := "ADV ENTRY Break+Retest(" + (use_wick_retest ? "Wick" : "Normal") + ")+Hold L1 " + str.tostring(L1)
