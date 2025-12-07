@@ -1,0 +1,201 @@
+//@version=6
+indicator("Daily Option Alerts - QQQ Only", overlay=true)
+
+// ────────────────────────────
+// INPUTS
+// ────────────────────────────
+strike_increment     = input.float(1.0, "Strike Increment")
+tp_mult_input        = input.float(1.5, "Profit Multiplier", step=0.1)
+orb_minutes_input    = input.int(15, "ORB Minutes Window")
+dte_type             = input.int(0, "DTE (0,1,2)", minval=0, maxval=2)
+htf_tf               = input.timeframe("60", "HTF for Greeks")
+enable_alerts        = input.bool(true, "Enable Alerts")
+ema_buffer           = input.float(0.001, "EMA Neutral Buffer (%)")
+signal_cooldown      = input.int(3, "Signal Cooldown (Bars)")
+require_ema          = input.bool(true, "Require EMA Trend")
+require_orb          = input.bool(true, "Require ORB Breakout")
+require_candle       = input.bool(true, "Require Candlestick Pattern")
+use_bullish_patterns = input.bool(true, "Use Bullish Patterns for Calls")
+use_bearish_patterns = input.bool(true, "Use Bearish Patterns for Puts")
+
+// Exit-safety options
+use_close_for_exit = input.bool(true, "Require bar CLOSE for TP/SL exit (prevents wick stops)")
+sl_buffer_atr_mult = input.float(0.0, "SL buffer (ATR multiples)", step=0.1)
+min_bars_hold      = input.int(1, "Min bars to hold before allowing exit", minval=0)
+
+// Alert session input
+alert_session = input.session("0930-1600", "Alert Session (EST)")
+in_market_hours = not na(time(timeframe.period, alert_session, "America/New_York"))
+
+// ────────────────────────────
+// Only plot labels if on QQQ chart
+// ────────────────────────────
+is_qqq_chart = syminfo.ticker == "QQQ"
+
+// ────────────────────────────
+// VARIABLES
+// ────────────────────────────
+tp_mult       = tp_mult_input
+orb_minutes   = orb_minutes_input
+_local_require_orb = require_orb
+_local_require_ema = require_ema
+
+var int last_call_bar = na
+var int last_put_bar  = na
+var int call_entry_bar = na
+var int put_entry_bar  = na
+var float call_tp = na
+var float call_sl = na
+var float put_tp  = na
+var float put_sl  = na
+var bool call_open = false
+var bool put_open  = false
+var float orb_high = na
+var float orb_low  = na
+var bool  orb_set  = false
+
+// ────────────────────────────
+// NEW DAY RESET
+// ────────────────────────────
+new_day = ta.change(time("D", "America/New_York")) != 0
+if new_day
+    orb_high := na
+    orb_low  := na
+    orb_set  := false
+    last_call_bar := na
+    last_put_bar  := na
+    call_open := false
+    put_open := false
+    call_entry_bar := na
+    put_entry_bar  := na
+
+// ────────────────────────────
+// ORB LOGIC
+// ────────────────────────────
+market_open = timestamp("America/New_York", year, month, dayofmonth, 9, 30)
+mins_from_open = (time - market_open) / 60000.0
+in_orb = mins_from_open >= 0 and mins_from_open < orb_minutes
+
+if in_orb and barstate.isconfirmed
+    orb_high := na(orb_high) ? high : math.max(orb_high, high)
+    orb_low  := na(orb_low)  ? low  : math.min(orb_low, low)
+    orb_set := true
+
+orb_break_up = orb_set and close > orb_high
+orb_break_dn = orb_set and close < orb_low
+
+// ────────────────────────────
+// EMA TREND
+// ────────────────────────────
+ema8  = ta.ema(close, 8)
+ema21 = ta.ema(close, 21)
+trend_up = ema8 > ema21 * (1 + ema_buffer)
+trend_dn = ema8 < ema21 * (1 - ema_buffer)
+
+// ────────────────────────────
+// ATR & TP/SL BASE
+// ────────────────────────────
+atr = ta.atr(14)
+atr_factor = math.sqrt(dte_type + 1)
+sl_dist_base = atr * 0.9 * atr_factor
+tp_dist_base = atr * tp_mult * atr_factor
+
+// ────────────────────────────
+// CANDLE PATTERNS
+// ────────────────────────────
+has_3_prior = bar_index >= 3
+
+bull_engulf = has_3_prior and open[2] > close[2] and close[1] > open[1] and open[1] <= close[2] and close[1] >= open[2]
+bear_engulf = has_3_prior and open[2] < close[2] and close[1] < open[1] and open[1] >= close[2] and close[1] <= open[2]
+hammer      = has_3_prior and (high[2] - low[2]) > 3 * math.abs(open[2] - close[2]) and (close[1] - low[1]) / math.max(0.0001, (high[1] - low[1])) > 0.6
+shooting    = has_3_prior and (high[2] - low[2]) > 3 * math.abs(open[2] - close[2]) and (high[1] - close[1]) / math.max(0.0001, (high[1] - low[1])) > 0.6
+morning     = has_3_prior and close[3] < open[3] and close[2] < open[2] and close[1] > (open[3] + close[3]) / 2.0
+evening     = has_3_prior and close[3] > open[3] and close[2] > open[2] and close[1] < (open[3] + close[3]) / 2.0
+
+bull_pattern = bull_engulf or hammer or morning
+bear_pattern = bear_engulf or shooting or evening
+
+// ────────────────────────────
+// CONDITIONS & COOLDOWN
+// ────────────────────────────
+condition_call = (not _local_require_ema or trend_up) and
+                 (not _local_require_orb or orb_break_up) and
+                 (not require_candle or (use_bullish_patterns and bull_pattern))
+
+condition_put  = (not _local_require_ema or trend_dn) and
+                 (not _local_require_orb or orb_break_dn) and
+                 (not require_candle or (use_bearish_patterns and bear_pattern))
+
+cooldown_call = na(last_call_bar) or (bar_index - last_call_bar >= signal_cooldown)
+cooldown_put  = na(last_put_bar) or (bar_index - last_put_bar >= signal_cooldown)
+
+// ────────────────────────────
+// ENTRY & EXIT SIGNALS
+// ────────────────────────────
+if barstate.isconfirmed
+    // CALL ENTRY
+    if condition_call and not call_open and cooldown_call
+        last_call_bar := bar_index
+        call_open := true
+        call_entry_bar := bar_index
+        call_tp := close + tp_dist_base
+        call_sl := close - sl_dist_base
+
+        // Labels only on QQQ
+        if is_qqq_chart
+            label.new(bar_index, low, "CALL ENTRY", color=color.green, style=label.style_label_up, textcolor=color.white, size=size.small)
+
+        // Alerts always if enabled and in session
+        if enable_alerts and in_market_hours
+            alert(str.format("CALL ENTRY | Entry={0} | TP={1} | SL={2}", close, call_tp, call_sl))
+
+    // PUT ENTRY
+    if condition_put and not put_open and cooldown_put
+        last_put_bar := bar_index
+        put_open := true
+        put_entry_bar := bar_index
+        put_tp := close - tp_dist_base
+        put_sl := close + sl_dist_base
+
+        if is_qqq_chart
+            label.new(bar_index, high, "PUT ENTRY", color=color.red, style=label.style_label_down, textcolor=color.white, size=size.small)
+
+        if enable_alerts and in_market_hours
+            alert(str.format("PUT ENTRY | Entry={0} | TP={1} | SL={2}", close, put_tp, put_sl))
+
+    // Adjust SLs
+    call_sl_adj = call_sl - sl_buffer_atr_mult * atr
+    put_sl_adj  = put_sl + sl_buffer_atr_mult * atr
+
+    // CALL EXIT
+    if call_open and bar_index - call_entry_bar >= min_bars_hold
+        if (use_close_for_exit ? close >= call_tp : high >= call_tp)
+            if is_qqq_chart
+                label.new(bar_index, high, "CALL EXIT TP", color=color.green, style=label.style_label_down, textcolor=color.white, size=size.small)
+            if enable_alerts and in_market_hours
+                alert(str.format("CALL EXIT TP | Exit={0}", close))
+            call_open := false
+        else if (use_close_for_exit ? close <= call_sl_adj : low <= call_sl_adj)
+            if is_qqq_chart
+                label.new(bar_index, low, "CALL EXIT SL", color=color.red, style=label.style_label_down, textcolor=color.white, size=size.small)
+            if enable_alerts and in_market_hours
+                alert(str.format("CALL EXIT SL | Exit={0}", close))
+            call_open := false
+
+    // PUT EXIT
+    if put_open and bar_index - put_entry_bar >= min_bars_hold
+        if (use_close_for_exit ? close <= put_tp : low <= put_tp)
+            if is_qqq_chart
+                label.new(bar_index, low, "PUT EXIT TP", color=color.green, style=label.style_label_up, textcolor=color.white, size=size.small)
+            if enable_alerts and in_market_hours
+                alert(str.format("PUT EXIT TP | Exit={0}", close))
+            put_open := false
+        else if (use_close_for_exit ? close >= put_sl_adj : high >= put_sl_adj)
+            if is_qqq_chart
+                label.new(bar_index, high, "PUT EXIT SL", color=color.red, style=label.style_label_up, textcolor=color.white, size=size.small)
+            if enable_alerts and in_market_hours
+                alert(str.format("PUT EXIT SL | Exit={0}", close))
+            put_open := false
+
+// Optional: highlight bars in session
+bgcolor(is_qqq_chart and in_market_hours ? color.new(color.green, 90) : na)
