@@ -363,9 +363,76 @@ ready_text  = ready_long ? "LONG READY" : ready_short ? "SHORT READY" : "WAIT"
 ready_color = ready_long ? color.rgb(0,180,60) : ready_short ? color.rgb(200,40,40) : color.rgb(255,165,0)
 
 // ==============================
-// DASHBOARD (no Base Support row; shows T1/T2/T3 & MTF rows optional)
+// ATR ENGINE (CLEAN — NO PLOTS)
+// Prefixes kept to avoid conflicts with your main variables.
 // ==============================
-var table dashTbl = table.new(position.bottom_right, 1, 14, border_width=1)
+
+// ATR inputs (prefixed)
+atr_trading_day     = 'Day'
+atr_trading_multiday= 'Multiday'
+atr_trading_swing   = 'Swing'
+atr_trading_position= 'Position'
+atr_trading_longterm= 'Long-term'
+atr_trading_type = input.string(atr_trading_day, 'ATR Trading Type', options=[atr_trading_day, atr_trading_multiday, atr_trading_swing, atr_trading_position, atr_trading_longterm])
+atr_use_options_labels = input.bool(true, 'ATR Use Options Labels')
+atr_length = input.int(14, 'ATR Length (ATR module)')
+atr_trigger_percentage = input.float(0.236, 'ATR Trigger Percentage')
+atr_use_current_close = input.bool(false, 'ATR Use Current Close')
+show_atr_info = input.bool(true, "Show ATR Info Table")
+
+// ATR timeframe resolver
+atr_tf_func() =>
+    tf_out = 'D'
+    if atr_trading_type == atr_trading_day
+        tf_out := 'D'
+    else if atr_trading_type == atr_trading_multiday
+        tf_out := 'W'
+    else if atr_trading_type == atr_trading_swing
+        tf_out := 'M'
+    else if atr_trading_type == atr_trading_position
+        tf_out := '3M'
+    else if atr_trading_type == atr_trading_longterm
+        tf_out := '12M'
+    tf_out
+
+
+// ATR Trend (8–21–34 EMA Ribbon) - prefixed names
+atr_price = close
+atr_fast_ema  = ta.ema(atr_price, 8)
+atr_pivot_ema = ta.ema(atr_price, 21)
+atr_slow_ema  = ta.ema(atr_price, 34)
+
+atr_bull = atr_price >= atr_fast_ema and atr_fast_ema >= atr_pivot_ema and atr_pivot_ema >= atr_slow_ema
+atr_bear = atr_price <= atr_fast_ema and atr_fast_ema <= atr_pivot_ema and atr_pivot_ema <= atr_slow_ema
+
+atr_trend_color = atr_bull ? color.green : atr_bear ? color.red : color.orange
+
+// Data (prefixed)
+atr_pidx = atr_use_current_close ? 0 : 1
+atr_sec  = ticker.new(syminfo.prefix, syminfo.ticker, session=session.extended)
+
+atr_prev_close = request.security(atr_sec, atr_tf_func(), close[atr_pidx], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+atr_value      = request.security(atr_sec, atr_tf_func(), ta.atr(atr_length)[atr_pidx], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+atr_period_high = request.security(atr_sec, atr_tf_func(), high, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+atr_period_low  = request.security(atr_sec, atr_tf_func(), low,  gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+atr_range = atr_period_high - atr_period_low
+atr_range_pct = atr_range / (atr_value == 0 ? 1 : atr_value) * 100
+
+// Trigger levels
+atr_call_trigger = math.round(atr_prev_close + atr_value * atr_trigger_percentage, 2)
+atr_put_trigger  = math.round(atr_prev_close - atr_value * atr_trigger_percentage, 2)
+
+
+// Option Label
+atr_long_label  = atr_use_options_labels ? "Calls" : "Long"
+atr_short_label = atr_use_options_labels ? "Puts"  : "Short"
+
+
+// ==============================
+// DASHBOARD (no Base Support row; shows T1/T2/T3 & MTF rows optional)
+// Note: table size increased by +2 rows to accommodate ATR summary
+// ==============================
+var table dashTbl = table.new(position.bottom_right, 1, 16, border_width=1)
 
 if barstate.islast
     table.cell(dashTbl, 0, 0, syminfo.ticker + " | Key Levels", text_color=color.white, bgcolor=color.rgb(255,140,0))
@@ -373,26 +440,44 @@ if barstate.islast
     table.cell(dashTbl, 0, 2, "Trend: " + trendDir, text_color=color.white, bgcolor=trendColor)
     table.cell(dashTbl, 0, 3, "Base L1/L2/L3: " + str.tostring(L1_disp, fmt) + " / " + str.tostring(L2_disp, fmt) + " / " + str.tostring(L3_disp, fmt), text_color=color.white, bgcolor=color.rgb(0,150,70))
     // Targets row (shows EW ext if EW found, fallback otherwise)
-    srcTag = EW_found ? " (EW ext)" : " (fallback)"
+    srcTag = EW_found ? " (EW ext)" : " "
     table.cell(dashTbl, 0, 4, "Targets T1/T2/T3" + srcTag + ": " + str.tostring(final_T1, fmt) + " / " + str.tostring(final_T2, fmt) + " / " + str.tostring(final_T3, fmt), text_color=color.white, bgcolor=color.rgb(0,120,200))
+
+    // ===========================
+    // ATR SUMMARY (inserted here)
+    // ===========================
+    atr_val_now  = atr_value  // prefetched ATR (timeframe from ATR module)
+    atr_pct_now  = atr_val_now / (c == 0 ? 1 : c) * 100
+    today_TR = math.round(high - low, 2)
+
+    atr_summary_txt =
+         "ATR14: " + str.tostring(atr_val_now, fmt) +
+         " | ATR%: " + str.tostring(atr_pct_now, "#.##") + "%" +
+         " | TR: " + str.tostring(today_TR, fmt) +
+         " | " + atr_long_label + " > " + str.tostring(atr_call_trigger, fmt) +
+         " | " + atr_short_label + " < " + str.tostring(atr_put_trigger, fmt)
+
+    table.cell(dashTbl, 0, 5, atr_summary_txt, text_color=color.white, bgcolor=color.rgb(120,70,160))
+
     // MTF rows (optional)
     if show_MTF_rows
-        table.cell(dashTbl, 0, 5, "Daily L1/L2/L3: " + str.tostring(D_L1, fmt) + " / " + str.tostring(D_L2, fmt) + " / " + str.tostring(D_L3, fmt), text_color=color.white)
-        table.cell(dashTbl, 0, 6, "Daily Supp/Ts: " + str.tostring(D_Support, fmt) + " | " + str.tostring(D_T1, fmt) + " / " + str.tostring(D_T2, fmt) + " / " + str.tostring(D_T3, fmt), text_color=color.white)
-        table.cell(dashTbl, 0, 7, "Weekly L1/L2/L3: " + str.tostring(W_L1, fmt) + " / " + str.tostring(W_L2, fmt) + " / " + str.tostring(W_L3, fmt), text_color=color.white)
-        table.cell(dashTbl, 0, 8, "Weekly Supp/Ts: " + str.tostring(W_Support, fmt) + " | " + str.tostring(W_T1, fmt) + " / " + str.tostring(W_T2, fmt) + " / " + str.tostring(W_T3, fmt), text_color=color.white)
-        table.cell(dashTbl, 0, 9, "Monthly L1/L2/L3: " + str.tostring(M_L1, fmt) + " / " + str.tostring(M_L2, fmt) + " / " + str.tostring(M_L3, fmt), text_color=color.white)
-        table.cell(dashTbl, 0, 10, "Monthly Supp/Ts: " + str.tostring(M_Support, fmt) + " | " + str.tostring(M_T1, fmt) + " / " + str.tostring(M_T2, fmt) + " / " + str.tostring(M_T3, fmt), text_color=color.white)
+        table.cell(dashTbl, 0, 6, "Daily L1/L2/L3: " + str.tostring(D_L1, fmt) + " / " + str.tostring(D_L2, fmt) + " / " + str.tostring(D_L3, fmt), text_color=color.white)
+        table.cell(dashTbl, 0, 7, "Daily Supp/Ts: " + str.tostring(D_Support, fmt) + " | " + str.tostring(D_T1, fmt) + " / " + str.tostring(D_T2, fmt) + " / " + str.tostring(D_T3, fmt), text_color=color.white)
+        table.cell(dashTbl, 0, 8, "Weekly L1/L2/L3: " + str.tostring(W_L1, fmt) + " / " + str.tostring(W_L2, fmt) + " / " + str.tostring(W_L3, fmt), text_color=color.white)
+        table.cell(dashTbl, 0, 9, "Weekly Supp/Ts: " + str.tostring(W_Support, fmt) + " | " + str.tostring(W_T1, fmt) + " / " + str.tostring(W_T2, fmt) + " / " + str.tostring(W_T3, fmt), text_color=color.white)
+        table.cell(dashTbl, 0, 10, "Monthly L1/L2/L3: " + str.tostring(M_L1, fmt) + " / " + str.tostring(M_L2, fmt) + " / " + str.tostring(M_L3, fmt), text_color=color.white)
+        table.cell(dashTbl, 0, 11, "Monthly Supp/Ts: " + str.tostring(M_Support, fmt) + " | " + str.tostring(M_T1, fmt) + " / " + str.tostring(M_T2, fmt) + " / " + str.tostring(M_T3, fmt), text_color=color.white)
+
     // EW & Fib box if found (optional)
     if show_EW_in_dash
         if EW_found
-            table.cell(dashTbl, 0, 11, "EW Dir: " + EW_dir + " | EW1:" + str.tostring(EW1, fmt) + " EW2:" + str.tostring(EW2, fmt) + " EW3:" + str.tostring(EW3, fmt), text_color=color.white, bgcolor=color.rgb(40,80,120))
-            table.cell(dashTbl, 0, 12, "Retrace box: 0.5=" + str.tostring(fib50, fmt) + " 0.618=" + str.tostring(fib618, fmt) + " 0.786=" + str.tostring(fib786, fmt) + " 0.886=" + str.tostring(fib886, fmt), text_color=color.white, bgcolor=color.rgb(20,60,120))
-            table.cell(dashTbl, 0, 13, "Ext targets: 1.272=" + str.tostring(ext1272, fmt) + " 1.618=" + str.tostring(ext1618, fmt) + " 2.0=" + str.tostring(ext2000, fmt), text_color=color.white, bgcolor=color.rgb(0,140,150))
+            table.cell(dashTbl, 0, 12, "EW Dir: " + EW_dir + " | EW1:" + str.tostring(EW1, fmt) + " EW2:" + str.tostring(EW2, fmt) + " EW3:" + str.tostring(EW3, fmt), text_color=color.white, bgcolor=color.rgb(40,80,120))
+            table.cell(dashTbl, 0, 13, "Retrace box: 0.5=" + str.tostring(fib50, fmt) + " 0.618=" + str.tostring(fib618, fmt) + " 0.786=" + str.tostring(fib786, fmt) + " 0.886=" + str.tostring(fib886, fmt), text_color=color.white, bgcolor=color.rgb(20,60,120))
+            table.cell(dashTbl, 0, 14, "Ext targets: 1.272=" + str.tostring(ext1272, fmt) + " 1.618=" + str.tostring(ext1618, fmt) + " 2.0=" + str.tostring(ext2000, fmt), text_color=color.white, bgcolor=color.rgb(0,140,150))
         else
-            table.cell(dashTbl, 0, 11, "EW: None detected", text_color=color.white, bgcolor=color.rgb(80,40,40))
-            table.cell(dashTbl, 0, 12, "Retrace box: N/A", text_color=color.white)
-            table.cell(dashTbl, 0, 13, "Ext targets: N/A", text_color=color.white)
+            table.cell(dashTbl, 0, 12, "EW: None detected", text_color=color.white, bgcolor=color.rgb(80,40,40))
+            table.cell(dashTbl, 0, 13, "Retrace box: N/A", text_color=color.white)
+            table.cell(dashTbl, 0, 14, "Ext targets: N/A", text_color=color.white)
 
 // ==============================
 // ALERT SYSTEM (unified) - unchanged (uses final levels where needed)
