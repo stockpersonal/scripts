@@ -62,27 +62,6 @@ T2_fb_base = math.round(range_close + hlDist * 0.50, 2)
 T3_fb_base = math.round(range_close + hlDist * 0.75, 2)
 
 // ==============================
-// MULTI-TIMEFRAME LEVEL ENGINE
-// ==============================
-getLevels(tf_src) =>
-    hh = request.security(syminfo.tickerid, tf_src, ta.highest(high, barsLookback))
-    ll = request.security(syminfo.tickerid, tf_src, ta.lowest(low, barsLookback))
-    cc = request.security(syminfo.tickerid, tf_src, close)
-    rng = hh - ll
-    L1_tf = math.round((hh + ll) / 2, 2)
-    L2_tf = math.round((hh + cc) / 2, 2)
-    L3_tf = math.round((ll + cc) / 2, 2)
-    Support_tf = math.round(ll, 2)
-    T1_tf = math.round(cc + rng * 0.25, 2)
-    T2_tf = math.round(cc + rng * 0.50, 2)
-    T3_tf = math.round(cc + rng * 0.75, 2)
-    [L1_tf, L2_tf, L3_tf, Support_tf, T1_tf, T2_tf, T3_tf, rng]
-
-[M_L1, M_L2, M_L3, M_Support, M_T1, M_T2, M_T3, M_Range] = getLevels("M")
-[W_L1, W_L2, W_L3, W_Support, W_T1, W_T2, W_T3, W_Range] = getLevels("W")
-[D_L1, D_L2, D_L3, D_Support, D_T1, D_T2, D_T3, D_Range] = getLevels("D")
-
-// ==============================
 // ZIGZAG PIVOT COLLECTION (for EW detection)
 // ==============================
 ph = ta.pivothigh(high, zz_depth, zz_depth)
@@ -453,31 +432,24 @@ if barstate.islast
     atr_summary_txt =
          "ATR14: " + str.tostring(atr_val_now, fmt) +
          " | ATR%: " + str.tostring(atr_pct_now, "#.##") + "%" +
-         " | TR: " + str.tostring(today_TR, fmt) +
-         " | " + atr_long_label + " > " + str.tostring(atr_call_trigger, fmt) +
+         " | TR: " + str.tostring(today_TR, fmt)
+
+    atr_option_txt =
+         atr_long_label + " > " + str.tostring(atr_call_trigger, fmt) +
          " | " + atr_short_label + " < " + str.tostring(atr_put_trigger, fmt)
 
     table.cell(dashTbl, 0, 5, atr_summary_txt, text_color=color.white, bgcolor=color.rgb(120,70,160))
-
-    // MTF rows (optional)
-    if show_MTF_rows
-        table.cell(dashTbl, 0, 6, "Daily L1/L2/L3: " + str.tostring(D_L1, fmt) + " / " + str.tostring(D_L2, fmt) + " / " + str.tostring(D_L3, fmt), text_color=color.white)
-        table.cell(dashTbl, 0, 7, "Daily Supp/Ts: " + str.tostring(D_Support, fmt) + " | " + str.tostring(D_T1, fmt) + " / " + str.tostring(D_T2, fmt) + " / " + str.tostring(D_T3, fmt), text_color=color.white)
-        table.cell(dashTbl, 0, 8, "Weekly L1/L2/L3: " + str.tostring(W_L1, fmt) + " / " + str.tostring(W_L2, fmt) + " / " + str.tostring(W_L3, fmt), text_color=color.white)
-        table.cell(dashTbl, 0, 9, "Weekly Supp/Ts: " + str.tostring(W_Support, fmt) + " | " + str.tostring(W_T1, fmt) + " / " + str.tostring(W_T2, fmt) + " / " + str.tostring(W_T3, fmt), text_color=color.white)
-        table.cell(dashTbl, 0, 10, "Monthly L1/L2/L3: " + str.tostring(M_L1, fmt) + " / " + str.tostring(M_L2, fmt) + " / " + str.tostring(M_L3, fmt), text_color=color.white)
-        table.cell(dashTbl, 0, 11, "Monthly Supp/Ts: " + str.tostring(M_Support, fmt) + " | " + str.tostring(M_T1, fmt) + " / " + str.tostring(M_T2, fmt) + " / " + str.tostring(M_T3, fmt), text_color=color.white)
-
+    table.cell(dashTbl, 0, 6, atr_option_txt, text_color=color.white, bgcolor=color.rgb(120,70,160))
     // EW & Fib box if found (optional)
     if show_EW_in_dash
         if EW_found
-            table.cell(dashTbl, 0, 12, "EW Dir: " + EW_dir + " | EW1:" + str.tostring(EW1, fmt) + " EW2:" + str.tostring(EW2, fmt) + " EW3:" + str.tostring(EW3, fmt), text_color=color.white, bgcolor=color.rgb(40,80,120))
-            table.cell(dashTbl, 0, 13, "Retrace box: 0.5=" + str.tostring(fib50, fmt) + " 0.618=" + str.tostring(fib618, fmt) + " 0.786=" + str.tostring(fib786, fmt) + " 0.886=" + str.tostring(fib886, fmt), text_color=color.white, bgcolor=color.rgb(20,60,120))
-            table.cell(dashTbl, 0, 14, "Ext targets: 1.272=" + str.tostring(ext1272, fmt) + " 1.618=" + str.tostring(ext1618, fmt) + " 2.0=" + str.tostring(ext2000, fmt), text_color=color.white, bgcolor=color.rgb(0,140,150))
+            table.cell(dashTbl, 0, 7, "EW Dir: " + EW_dir + " | EW1:" + str.tostring(EW1, fmt) + " EW2:" + str.tostring(EW2, fmt) + " EW3:" + str.tostring(EW3, fmt), text_color=color.white, bgcolor=color.rgb(40,80,120))
+            table.cell(dashTbl, 0, 8, "Retrace box: 0.5=" + str.tostring(fib50, fmt) + " 0.618=" + str.tostring(fib618, fmt) + " 0.786=" + str.tostring(fib786, fmt) + " 0.886=" + str.tostring(fib886, fmt), text_color=color.white, bgcolor=color.rgb(20,60,120))
+            table.cell(dashTbl, 0, 9, "Ext targets: 1.272=" + str.tostring(ext1272, fmt) + " 1.618=" + str.tostring(ext1618, fmt) + " 2.0=" + str.tostring(ext2000, fmt), text_color=color.white, bgcolor=color.rgb(0,140,150))
         else
-            table.cell(dashTbl, 0, 12, "EW: None detected", text_color=color.white, bgcolor=color.rgb(80,40,40))
-            table.cell(dashTbl, 0, 13, "Retrace box: N/A", text_color=color.white)
-            table.cell(dashTbl, 0, 14, "Ext targets: N/A", text_color=color.white)
+            table.cell(dashTbl, 0, 7, "EW: None detected", text_color=color.white, bgcolor=color.rgb(80,40,40))
+            table.cell(dashTbl, 0, 8, "Retrace box: N/A", text_color=color.white, bgcolor=color.rgb(178,190,181))
+            table.cell(dashTbl, 0, 9, "Ext targets: N/A", text_color=color.white, bgcolor=color.rgb(178,190,181))
 
 // ==============================
 // ALERT SYSTEM (unified) - unchanged (uses final levels where needed)
