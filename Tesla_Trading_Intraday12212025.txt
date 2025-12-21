@@ -1,0 +1,165 @@
+//@version=5
+indicator("Tesla Trading Intraday", overlay = true)
+
+// ─────────────────────────────
+// Inputs
+// ─────────────────────────────
+fastEMA     = input.int(9, "Fast EMA")
+midEMA      = input.int(21, "Mid EMA")
+slowEMA     = input.int(50, "Slow EMA")
+
+useVWAP     = input.bool(true, "Require VWAP Hold")
+vwapBands   = input.bool(true, "Show VWAP Bands")
+
+rrMultiple  = input.float(2.0, "Target R Multiple")
+pullbackLen = input.int(5, "Pullback Lookback")
+
+strikeStep  = input.float(5.0, "Strike Increment (TSLA = 5)", step = 0.5)
+
+// ─────────────────────────────
+// Session / Day Control
+// ─────────────────────────────
+sessionStart = timestamp("America/New_York", year, month, dayofmonth, 9, 30)
+sessionEnd   = timestamp("America/New_York", year, month, dayofmonth, 16, 0)
+forceExit    = timestamp("America/New_York", year, month, dayofmonth, 15, 55)
+
+inSession = time >= sessionStart and time <= sessionEnd
+newDay    = ta.change(time("D"))
+
+// ─────────────────────────────
+// Trade State
+// ─────────────────────────────
+var bool tradeActive = false
+var string activeSide = ""
+var bool stopAlertFired  = false
+
+// Reset at new day (NO OVERNIGHT)
+if newDay
+    tradeActive := false
+    activeSide  := ""
+    stopAlertFired  := false
+
+// ─────────────────────────────
+// Indicators
+// ─────────────────────────────
+emaFast = ta.ema(close, fastEMA)
+emaMid  = ta.ema(close, midEMA)
+emaSlow = ta.ema(close, slowEMA)
+vwapVal = ta.vwap(close)
+
+// VWAP Bands
+vwapStd   = ta.stdev(close, 20)
+vwapUpper = vwapVal + vwapStd
+vwapLower = vwapVal - vwapStd
+
+// ─────────────────────────────
+// Trend Logic
+// ─────────────────────────────
+bullTrend = emaFast > emaMid and emaMid > emaSlow and close > emaFast and close > emaMid
+bearTrend = emaFast < emaMid and emaMid < emaSlow and close < emaFast and close < emaMid
+
+vwapBull = not useVWAP or close > vwapVal
+vwapBear = not useVWAP or close < vwapVal
+
+// ─────────────────────────────
+// Structure
+// ─────────────────────────────
+supportLevel    = ta.lowest(low, pullbackLen)
+resistanceLevel = ta.highest(high, pullbackLen)
+
+// ─────────────────────────────
+// Candle Logic
+// ─────────────────────────────
+bullMomentum = close > open and (close - open) > (high - low) * 0.5
+bearMomentum = open > close and (open - close) > (high - low) * 0.5
+
+higherLow = low > low[1]
+lowerHigh = high < high[1]
+
+// ─────────────────────────────
+// VALID STRUCTURE
+// ─────────────────────────────
+callValid = bullTrend and vwapBull and close > supportLevel and higherLow and bullMomentum
+putValid  = bearTrend and vwapBear and close < resistanceLevel and lowerHigh and bearMomentum
+
+// ─────────────────────────────
+// Targets
+// ─────────────────────────────
+callRisk   = close - supportLevel
+callTarget = close + (callRisk * rrMultiple)
+
+putRisk    = resistanceLevel - close
+putTarget  = close - (putRisk * rrMultiple)
+
+// ─────────────────────────────
+// Auto Strike
+// ─────────────────────────────
+roundStrike(x) => math.round(x / strikeStep) * strikeStep
+callStrikeSuggested = roundStrike(close)
+putStrikeSuggested  = roundStrike(close)
+
+// ─────────────────────────────
+// SIGNALS (ONE TRADE ONLY)
+// ─────────────────────────────
+callSignal = callValid and not tradeActive and inSession
+putSignal  = putValid  and not tradeActive and inSession
+
+if callSignal
+    tradeActive := true
+    activeSide  := "CALL"
+    stopAlertFired  := false
+
+if putSignal
+    tradeActive := true
+    activeSide  := "PUT"
+    stopAlertFired  := false
+
+// ─────────────────────────────
+// STOP LOSS CONDITIONS
+// ─────────────────────────────
+callStopHit = tradeActive and activeSide == "CALL" and close < supportLevel
+putStopHit  = tradeActive and activeSide == "PUT"  and close > resistanceLevel
+
+// ─────────────────────────────
+// STOP LOSS ALERTS (ONCE)
+// ─────────────────────────────
+if callStopHit and not stopAlertFired
+    alert("🛑 CALL STOP HIT\n" + "Symbol: " + syminfo.ticker + "\n" + "Below Support\n" + "Price: " + str.tostring(close), alert.freq_once_per_bar_close)
+    stopAlertFired := true
+
+if putStopHit and not stopAlertFired
+    alert("🛑 PUT STOP HIT\n" + "Symbol: " + syminfo.ticker + "\n" + "Above Resistance\n" + "Price: " + str.tostring(close), alert.freq_once_per_bar_close)
+    stopAlertFired := true
+
+// ─────────────────────────────
+// Trade Close Logic
+// ─────────────────────────────
+callClosed = activeSide == "CALL" and (close >= callTarget or callStopHit)
+putClosed  = activeSide == "PUT"  and (close <= putTarget or putStopHit)
+forceClose = tradeActive and time >= forceExit
+
+if callClosed or putClosed or forceClose
+    tradeActive := false
+    activeSide  := ""
+    stopAlertFired  := false
+
+// ─────────────────────────────
+// Visual Signals
+// ─────────────────────────────
+plotshape(callSignal, style=shape.triangleup,   location=location.belowbar, color=color.lime, size=size.small)
+plotshape(putSignal,  style=shape.triangledown, location=location.abovebar, color=color.red,  size=size.small)
+
+if callSignal
+    label.new(bar_index, high, "CALL \nStrike: " + str.tostring(callStrikeSuggested), style=label.style_label_up, color=color.green, textcolor=color.white)
+
+if putSignal
+    label.new(bar_index, low, "PUT\nStrike: " + str.tostring(putStrikeSuggested), style=label.style_label_down, color=color.red, textcolor=color.white)
+
+// ─────────────────────────────
+// 🔔 DYNAMIC ALERTS (WITH STRIKE)
+// ─────────────────────────────
+if callSignal
+    alert("CALL SETUP VALID\n" + "Symbol: " + syminfo.ticker + "\n" + "Strike: " + str.tostring(callStrikeSuggested) + "\n" + "Price: " + str.tostring(close), alert.freq_once_per_bar_close)
+
+if putSignal
+    alert("PUT SETUP VALID\n" + "Symbol: " + syminfo.ticker + "\n" + "Strike: " + str.tostring(putStrikeSuggested) + "\n" + "Price: " + str.tostring(close), alert.freq_once_per_bar_close)
