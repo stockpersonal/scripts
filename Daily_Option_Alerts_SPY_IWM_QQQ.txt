@@ -1,0 +1,118 @@
+//@version=5
+indicator("Daily Option Alerts - SPY/IWM/QQQ", overlay=true, max_labels_count=500)
+
+// ================= SYMBOL =================
+symbol_display = syminfo.ticker
+
+// ================= INPUTS =================
+use_pdh_pdl = input.bool(true, "Enable PDH/PDL Break Signals")
+ema_fast_len = input.int(8, "EMA Fast")
+ema_slow_len = input.int(21, "EMA Slow")
+enable_candle_filter = input.bool(true, "Require Candle Pattern")
+signal_cooldown_bars = input.int(5, "Signal Cooldown", minval=0)
+use_rth_filter = input.bool(true, "RTH Only")
+session_rth = input.session("0930-1600", "RTH Session")
+enable_alerts = input.bool(true, "Enable Alerts")
+
+// ===== Targets / Stops =====
+atr_stop_mult = input.float(0.7, "ATR Stop Multiplier", step=0.1)
+
+// ================= INDICATORS =================
+ema8 = ta.ema(close, ema_fast_len)
+ema21 = ta.ema(close, ema_slow_len)
+vwap_val = ta.vwap(hlc3)
+atr_val = ta.atr(14)
+
+// ================= 🔑 RTH HTF LEVELS =================
+rthTicker = ticker.new(syminfo.prefix, syminfo.ticker, session=session.regular)
+pdh = request.security(rthTicker, "D", high[1], lookahead=barmerge.lookahead_off)
+pdl = request.security(rthTicker, "D", low[1],  lookahead=barmerge.lookahead_off)
+
+// ================= TREND =================
+bull_trend = ema8 > ema21 and close > vwap_val
+bear_trend = ema8 < ema21 and close < vwap_val
+
+retest_bull = bull_trend and low <= ema8 and close > ema8 and close > open
+retest_bear = bear_trend and high >= ema8 and close < ema8 and close < open
+
+pdh_signal = use_pdh_pdl and bull_trend and close > pdh and close > open
+pdl_signal = use_pdh_pdl and bear_trend and close < pdl and close < open
+
+// ================= CANDLE PATTERNS =================
+has_3_prior = bar_index >= 3
+
+bull_engulf = has_3_prior and close[1] > open[1] and close[2] < open[2] and close[1] > open[2] and open[1] < close[2]
+bear_engulf = has_3_prior and close[1] < open[1] and close[2] > open[2] and close[1] < open[2] and open[1] > close[2]
+hammer = has_3_prior and (high[1] - low[1]) > 3 * math.abs(open[1] - close[1]) and (close[1] - low[1]) / math.max(0.0001, high[1] - low[1]) > 0.6
+shooting = has_3_prior and (high[1] - low[1]) > 3 * math.abs(open[1] - close[1]) and (high[1] - close[1]) / math.max(0.0001, high[1] - low[1]) > 0.6
+morning = has_3_prior and close[3] < open[3] and close[2] < open[2] and close[1] > (open[3] + close[3]) / 2
+evening = has_3_prior and close[3] > open[3] and close[2] > open[2] and close[1] < (open[3] + close[3]) / 2
+
+bull_pattern = bull_engulf or hammer or morning
+bear_pattern = bear_engulf or shooting or evening
+
+// ================= CONDITIONS =================
+var int last_trade_bar = na
+cooldown_ok = na(last_trade_bar) or bar_index - last_trade_bar >= signal_cooldown_bars
+in_rth = use_rth_filter ? not na(time(timeframe.period, session_rth)) : true
+
+condition_call = bull_trend and (not enable_candle_filter or bull_pattern)
+condition_put  = bear_trend and (not enable_candle_filter or bear_pattern)
+
+signalCall = barstate.isconfirmed and cooldown_ok and in_rth and condition_call and (retest_bull or pdh_signal)
+signalPut  = barstate.isconfirmed and cooldown_ok and in_rth and condition_put  and (retest_bear or pdl_signal)
+
+// ================= TRADE STATE =================
+var bool inTrade = false
+var bool isCall = false
+var float entryPrice = na
+var bool t30_hit = false
+var bool t60_hit = false
+var bool stop_hit = false
+
+// ================= ENTRY =================
+if signalCall and not inTrade
+    inTrade := true
+    isCall := true
+    entryPrice := close
+    t30_hit := false
+    t60_hit := false
+    stop_hit := false
+    last_trade_bar := bar_index
+    label.new(bar_index, low, "CALL", style=label.style_label_up, color=color.green, textcolor=color.white)
+    if enable_alerts
+        alert(symbol_display + " | CALL ENTRY | " + str.tostring(close))
+
+if signalPut and not inTrade
+    inTrade := true
+    isCall := false
+    entryPrice := close
+    t30_hit := false
+    t60_hit := false
+    stop_hit := false
+    last_trade_bar := bar_index
+    label.new(bar_index, high, "PUT", style=label.style_label_down, color=color.red, textcolor=color.white)
+    if enable_alerts
+        alert(symbol_display + " | PUT ENTRY | " + str.tostring(close))
+
+// ================= TARGETS & STOPS =================
+target30  = entryPrice + (isCall ? atr_val * 0.3 : -atr_val * 0.3)
+target60  = entryPrice + (isCall ? atr_val * 0.6 : -atr_val * 0.6)
+stopLevel = entryPrice + (isCall ? -atr_val * atr_stop_mult : atr_val * atr_stop_mult)
+
+// ================= TARGET / STOP ALERTS =================
+if inTrade and not t30_hit and ((isCall and high >= target30) or (not isCall and low <= target30))
+    t30_hit := true
+    if enable_alerts
+        alert(symbol_display + " | TARGET 30% HIT")
+
+if inTrade and not t60_hit and ((isCall and high >= target60) or (not isCall and low <= target60))
+    t60_hit := true
+    if enable_alerts
+        alert(symbol_display + " | TARGET 60% HIT")
+
+if inTrade and not stop_hit and ((isCall and low <= stopLevel) or (not isCall and high >= stopLevel))
+    stop_hit := true
+    inTrade := false
+    if enable_alerts
+        alert(symbol_display + " | STOP HIT")
