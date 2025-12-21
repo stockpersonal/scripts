@@ -1,0 +1,153 @@
+//@version=5
+indicator("HowToTrade SPY Alerts", overlay=true)
+
+//================ USER INPUTS =================
+optStrikeStep = input.float(1.0, "SPY Strike Increment ($)", step=0.5)
+optDTE        = input.int(1, "Option DTE (days)", minval=0)
+strikeOffset = input.int(0, "Strike Offset (0=ATM, +1 OTM, -1 ITM)")
+bufferMin    = input.float(0.30, "Min Buffer ($)", step=0.05)
+bufferMax    = input.float(0.60, "Max Buffer ($)", step=0.05)
+minRR_TP1    = input.float(0.5, "Minimum RR for TP1")
+optStopPct  = input.float(30.0, "Option Stop Loss (%)")
+useVolumeConfirm = input.bool(true, "Require Volume Confirmation")
+
+tradeSession1 = input.session("0945-1100", "AM Session")
+tradeSession2 = input.session("1400-1545", "PM Session")
+rthSession    = input.session("0930-1600", "RTH Session")
+
+//================ HARD ENTRY CUTOFF =================
+cutoffHour   = 15
+cutoffMinute = 55
+beforeCutoff = hour(time, syminfo.timezone) < cutoffHour or (hour(time, syminfo.timezone) == cutoffHour and minute(time, syminfo.timezone) < cutoffMinute)
+
+//================ TIME FILTERS =================
+inSession = not na(time(timeframe.period, tradeSession1)) or not na(time(timeframe.period, tradeSession2))
+inRTH = not na(time(timeframe.period, rthSession))
+
+//================ INDICATORS ==================
+emaFastLen = 8
+emaSlowLen = 21
+emaFast = ta.ema(close, emaFastLen)
+emaSlow = ta.ema(close, emaSlowLen)
+vwapVal = ta.vwap(hlc3)
+
+//================ RTH PDH / PDL =================
+rthTicker = ticker.new(syminfo.prefix, syminfo.ticker, session=session.regular)
+pdh = request.security(rthTicker, "D", high[1], lookahead=barmerge.lookahead_off)
+pdl = request.security(rthTicker, "D", low[1],  lookahead=barmerge.lookahead_off)
+
+//================ WEEK LEVELS =================
+prevWeekHigh = request.security(syminfo.tickerid, "W", high[1], lookahead=barmerge.lookahead_off)
+prevWeekLow  = request.security(syminfo.tickerid, "W", low[1],  lookahead=barmerge.lookahead_off)
+
+//================ LEVEL PROXIMITY =================
+levelBuffer = bufferMax
+nearSupport    = math.abs(low  - pdl) <= levelBuffer or math.abs(low  - prevWeekLow)  <= levelBuffer
+nearResistance = math.abs(high - pdh) <= levelBuffer or math.abs(high - prevWeekHigh) <= levelBuffer
+
+//================ CANDLE PATTERNS =================
+bullishEngulfing = close > open and close[1] < open[1] and close > open[1]
+bearishEngulfing = close < open and close[1] > open[1] and close < open[1]
+
+bullishPin = close > open and (open - low)  > (high - close) * 1.5
+bearishPin = close < open and (high - open) > (close - low) * 1.5
+
+falseBreakBull = low  < pdl and close > pdl and bullishPin
+falseBreakBear = high > pdh and close < pdh and bearishPin
+
+bullPattern = bullishEngulfing or bullishPin or falseBreakBull
+bearPattern = bearishEngulfing or bearishPin or falseBreakBear
+
+//================ TREND + RETEST =================
+bullTrend = emaFast > emaSlow and close > vwapVal
+bearTrend = emaFast < emaSlow and close < vwapVal
+
+retestBull = bullTrend and low  <= emaFast and close > emaFast
+retestBear = bearTrend and high >= emaFast and close < emaFast
+
+pdhSignal = bullTrend and close > pdh
+pdlSignal = bearTrend and close < pdl
+
+//================ MARKET TYPE AUTO-DETECT =================
+emaSep   = math.abs(emaFast - emaSlow)
+vwapDist = math.abs(close - vwapVal)
+avgRange = ta.sma(high - low, 20)
+rthRange = pdh - pdl
+isPowerHour = hour(time, syminfo.timezone) >= 14
+
+isTrending = emaSep > syminfo.mintick * 10 and vwapDist > syminfo.mintick * 20
+isBreakout = (close > pdh or close < pdl) and volume > ta.sma(volume, 20)
+
+marketType = isPowerHour and isTrending ? "POWER HOUR" : isBreakout and isTrending ? "BREAKOUT" : isTrending ? "TREND DAY" : "CHOP"
+
+//================ AUTO FILTER MAPPING =================
+useTrend  = marketType != "CHOP"
+useRetest = marketType == "TREND DAY" or marketType == "POWER HOUR"
+usePDH    = marketType == "BREAKOUT" or marketType == "POWER HOUR"
+
+//================ VOLUME =================
+validVolume = not useVolumeConfirm or volume > volume[1]
+
+//================ RISK & RR =================
+buffer = math.avg(bufferMin, bufferMax)
+
+longEntry = high + buffer
+longStop  = low  - buffer
+longRR    = (pdh - longEntry) / (longEntry - longStop)
+
+shortEntry = low  - buffer
+shortStop  = high + buffer
+shortRR    = (shortEntry - pdl) / (shortStop - shortEntry)
+
+//================ STRIKES =================
+atmStrike  = math.round(close / optStrikeStep) * optStrikeStep
+callStrike = atmStrike + strikeOffset * optStrikeStep
+putStrike  = atmStrike - strikeOffset * optStrikeStep
+
+//================ TRADE STATE =================
+var bool tradeActive = false
+var string tradeSide = ""
+var float stopProxy = na
+
+if ta.change(time("D"))
+    tradeActive := false
+    tradeSide := ""
+    stopProxy := na
+
+//================ ENTRY CONDITIONS =================
+longAlert = inSession and inRTH and beforeCutoff and nearSupport and bullPattern and validVolume and longRR >= minRR_TP1 and (not useTrend or bullTrend) and (not useRetest or retestBull) and (not usePDH or pdhSignal) and not tradeActive
+shortAlert = inSession and inRTH and beforeCutoff and nearResistance and bearPattern and validVolume and shortRR >= minRR_TP1 and (not useTrend or bearTrend) and (not useRetest or retestBear) and (not usePDH or pdlSignal) and not tradeActive
+
+//================ ENTRIES =================
+if longAlert and barstate.isconfirmed
+    tradeActive := true
+    tradeSide := "CALL"
+    stopProxy := longStop
+    msg = "SPY CALL | " + str.tostring(callStrike) + " | " + str.tostring(optDTE) + "DTE | MODE " + marketType
+    label.new(bar_index, low, msg, style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+    alert(msg, alert.freq_once_per_bar_close)
+
+if shortAlert and barstate.isconfirmed
+    tradeActive := true
+    tradeSide := "PUT"
+    stopProxy := shortStop
+    msg = "SPY PUT | " + str.tostring(putStrike) + " | " + str.tostring(optDTE) + "DTE | MODE " + marketType
+    label.new(bar_index, high, msg, style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+    alert(msg, alert.freq_once_per_bar_close)
+
+//================ STOP LOGIC =================
+stopHit = tradeActive and inRTH and ((tradeSide == "CALL" and low  <= stopProxy) or (tradeSide == "PUT"  and high >= stopProxy))
+
+if stopHit and barstate.isconfirmed
+    msg = "🛑 SPY " + tradeSide + " EXIT"
+    label.new(bar_index, close, msg, style=label.style_label_left, color=color.orange, textcolor=color.black, size=size.small)
+    alert(msg, alert.freq_once_per_bar_close)
+    tradeActive := false
+    tradeSide := ""
+    stopProxy := na
+
+//================ FORCE RESET AFTER RTH =================
+if tradeActive and not inRTH and barstate.isconfirmed
+    tradeActive := false
+    tradeSide := ""
+    stopProxy := na
