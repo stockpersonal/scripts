@@ -1,0 +1,157 @@
+//@version=5
+indicator("Swing Trades Stocks", overlay=true)
+
+//━━━━━━━━━━━━━━━━━━━
+// INPUTS
+//━━━━━━━━━━━━━━━━━━━
+dashDistancePct = input.float(2.0, "Dashboard Distance (%)", step=0.1)
+
+showDashboard = input.bool(true, "Show Dashboard")
+showHTFInfo   = input.bool(true, "Show Daily / 5D Levels")
+showPivotInfo = input.bool(true, "Show Pivot Levels")
+showTradeInfo = input.bool(true, "Show Trade Info")
+showSignals   = input.bool(true, "Show Buy / Sell Signals")
+
+//━━━━━━━━━━━━━━━━━━━
+// DISTANCE FILTER
+//━━━━━━━━━━━━━━━━━━━
+nearDash(price) =>
+    math.abs(price - close) <= close * dashDistancePct / 100
+
+//━━━━━━━━━━━━━━━━━━━
+// TIMEFRAME
+//━━━━━━━━━━━━━━━━━━━
+isIntraday = timeframe.isminutes
+
+//━━━━━━━━━━━━━━━━━━━
+// HTF LEVELS (NO REPAINT)
+//━━━━━━━━━━━━━━━━━━━
+dHigh = request.security(syminfo.tickerid, "D", high, lookahead=barmerge.lookahead_off)
+dLow  = request.security(syminfo.tickerid, "D", low,  lookahead=barmerge.lookahead_off)
+d5H   = request.security(syminfo.tickerid, "D", ta.highest(high, 5), lookahead=barmerge.lookahead_off)
+d5L   = request.security(syminfo.tickerid, "D", ta.lowest(low, 5),  lookahead=barmerge.lookahead_off)
+
+//━━━━━━━━━━━━━━━━━━━
+// PIVOTS
+//━━━━━━━━━━━━━━━━━━━
+p  = (high + low + close) / 3
+r1 = 2 * p - low
+r2 = p + (high - low)
+s1 = 2 * p - high
+s2 = p - (high - low)
+
+//━━━━━━━━━━━━━━━━━━━
+// EMA
+//━━━━━━━━━━━━━━━━━━━
+ema200 = ta.ema(close, 200)
+
+//━━━━━━━━━━━━━━━━━━━
+// BUY / SELL LOGIC
+//━━━━━━━━━━━━━━━━━━━
+buySignal  = ta.crossover(close, ema200)
+sellSignal = ta.crossunder(close, ema200)
+
+//━━━━━━━━━━━━━━━━━━━
+// SIGNAL PLOTS
+//━━━━━━━━━━━━━━━━━━━
+plotshape(showSignals and buySignal,
+     title="BUY",
+     style=shape.labelup,
+     location=location.belowbar,
+     color=color.green,
+     text="BUY")
+
+plotshape(showSignals and sellSignal,
+     title="SELL",
+     style=shape.labeldown,
+     location=location.abovebar,
+     color=color.red,
+     text="SELL")
+
+//━━━━━━━━━━━━━━━━━━━
+// TRADE VALUES
+//━━━━━━━━━━━━━━━━━━━
+var float sl   = na
+var float risk = na
+var string lastSignal = "NONE"
+
+if buySignal
+    sl := low
+    risk := close - sl
+    lastSignal := "BUY"
+
+if sellSignal
+    sl := high
+    risk := sl - close
+    lastSignal := "SELL"
+
+//━━━━━━━━━━━━━━━━━━━
+// DASHBOARD TABLE
+//━━━━━━━━━━━━━━━━━━━
+var table dash = table.new(position.top_right, 2, 20, border_width=1)
+
+// Row helper (high contrast)
+row(_r, _label, _value, _color) =>
+    table.cell(dash, 0, _r, _label + " :", text_color=color.new(color.white, 40), bgcolor=color.rgb(0,150,70), text_halign=text.align_left)
+    table.cell(dash, 1, _r, _value,      text_color=_color, bgcolor=color.rgb(0,150,70), text_halign=text.align_right)
+
+// Section header
+section(_r, _title) =>
+    table.cell(dash, 0, _r, "  " + _title, text_color=color.yellow, bgcolor=color.rgb(0,150,70), text_halign=text.align_left)
+    table.cell(dash, 1, _r, "", bgcolor=color.rgb(0,150,70))
+
+//━━━━━━━━━━━━━━━━━━━
+// DASHBOARD BUILD
+//━━━━━━━━━━━━━━━━━━━
+if showDashboard and barstate.islast
+    table.clear(dash, 0, 0)
+    int r = 0
+
+    // ── MARKET ──
+    section(r, "MARKET"), r += 1
+    row(r, "SYMBOL", syminfo.ticker, color.white), r += 1
+    row(r, "PRICE", str.tostring(close, format.mintick), color.white), r += 1
+
+    trendText  = close > ema200 ? "ABOVE EMA 200" : "BELOW EMA 200"
+    trendColor = close > ema200 ? color.lime : color.red
+    row(r, "TREND", trendText, trendColor), r += 1
+
+    // ── TRADE ──
+    if showTradeInfo
+        section(r, "TRADE"), r += 1
+        row(r, "SIGNAL", lastSignal, lastSignal == "BUY" ? color.green : lastSignal == "SELL" ? color.red : color.gray), r += 1
+
+        if lastSignal != "NONE"
+            row(r, "STOP", str.tostring(sl, format.mintick), color.red), r += 1
+            row(r, "RISK", str.tostring(risk, format.mintick), color.orange), r += 1
+            row(r, "1R", str.tostring(lastSignal == "BUY" ? close + risk : close - risk, format.mintick), color.lime), r += 1
+            row(r, "2R", str.tostring(lastSignal == "BUY" ? close + risk * 2 : close - risk * 2, format.mintick), color.lime), r += 1
+
+    // ── LEVELS ──
+    if showPivotInfo and isIntraday
+        section(r, "LEVELS"), r += 1
+
+        if lastSignal == "BUY"
+            if nearDash(s1)
+                row(r, "TARGET S1", str.tostring(s1, format.mintick), color.lime), r += 1
+            if nearDash(s2)
+                row(r, "TARGET S2", str.tostring(s2, format.mintick), color.lime), r += 1
+
+        if lastSignal == "SELL"
+            if nearDash(r1)
+                row(r, "RESIST R1", str.tostring(r1, format.mintick), color.red), r += 1
+            if nearDash(r2)
+                row(r, "RESIST R2", str.tostring(r2, format.mintick), color.red), r += 1
+
+    // ── HTF ──
+    if showHTFInfo and isIntraday
+        section(r, "HTF LEVELS"), r += 1
+
+        if nearDash(dHigh)
+            row(r, "1D HIGH", str.tostring(dHigh, format.mintick), color.white), r += 1
+        if nearDash(dLow)
+            row(r, "1D LOW", str.tostring(dLow, format.mintick), color.white), r += 1
+        if nearDash(d5H)
+            row(r, "5D HIGH", str.tostring(d5H, format.mintick), color.white), r += 1
+        if nearDash(d5L)
+            row(r, "5D LOW", str.tostring(d5L, format.mintick), color.white), r += 1
