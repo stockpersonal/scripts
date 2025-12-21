@@ -27,6 +27,11 @@ afterOpen = not na(time(timeframe.period, session.regular))
 // =======================
 isNewDay = ta.change(time("D")) > 0
 
+// =======================
+// CURRENT CHART SYMBOL
+// =======================
+chartSym = syminfo.ticker
+
 // =====================
 // CORE FUNCTION
 // =====================
@@ -160,33 +165,38 @@ f_alert(e1, "ENTRY "  + sym1 + " $" + str.tostring(k1) + " " + exp1)
 f_alert(a1, "ADD VWAP " + sym1 + " $" + str.tostring(k1) + " " + exp1)
 f_alert(s1, "STOP "   + sym1 + " $" + str.tostring(k1) + " " + exp1)
 f_alert(g1, "TARGET " + sym1 + " $" + str.tostring(k1) + " " + exp1)
-plot(t1_on and e1 and not isNewDay ? t1_res : na, "CALL Level", color=color.green, linewidth=2)
-plot(t1_on and e1 and not isNewDay ? t1_tgt : na, "CALL Target", color=color.black)
+isT1Chart = chartSym == t1_sym
+plot(isT1Chart and t1_on and e1 and not isNewDay ? t1_res : na, "CALL Level", color=color.green, linewidth=2)
+plot(isT1Chart and t1_on and e1 and not isNewDay ? t1_tgt : na, "CALL Target", color=color.black)
 
 f_alert(e2, "ENTRY "  + sym2 + " $" + str.tostring(k2) + " " + exp2)
-f_alert(a2, "ADD VWAP " + sym1 + " $" + str.tostring(k1) + " " + exp1)
+f_alert(a2, "ADD VWAP " + sym2 + " $" + str.tostring(k2) + " " + exp2)
 f_alert(s2, "STOP "   + sym2 + " $" + str.tostring(k2) + " " + exp2)
 f_alert(g2, "TARGET " + sym2 + " $" + str.tostring(k2) + " " + exp2)
-plot(t2_on and e2 and not isNewDay ? t2_res : na, "CALL Level", color=color.green, linewidth=2)
-plot(t2_on and e2 and not isNewDay ? t2_tgt : na, "CALL Target", color=color.black)
+isT2Chart = chartSym == t2_sym
+plot(isT2Chart and t2_on and e2 and not isNewDay ? t2_res : na, "CALL Level", color=color.green, linewidth=2)
+plot(isT2Chart and t2_on and e2 and not isNewDay ? t2_tgt : na, "CALL Target", color=color.black)
 
 f_alert(e3, "ENTRY "  + sym3 + " $" + str.tostring(k3) + " " + exp3)
-f_alert(a3, "ADD VWAP " + sym1 + " $" + str.tostring(k1) + " " + exp1)
+f_alert(a3, "ADD VWAP " + sym3 + " $" + str.tostring(k3) + " " + exp3)
 f_alert(s3, "STOP "   + sym3 + " $" + str.tostring(k3) + " " + exp3)
 f_alert(g3, "TARGET " + sym3 + " $" + str.tostring(k3) + " " + exp3)
-plot(t3_on and e3 and not isNewDay ? t3_res : na, "CALL Level", color=color.green, linewidth=2)
-plot(t3_on and e3 and not isNewDay ? t3_tgt : na, "CALL Target", color=color.black)
+isT3Chart = chartSym == t3_sym
+plot(isT3Chart and t3_on and e3 and not isNewDay ? t3_res : na, "CALL Level", color=color.green, linewidth=2)
+plot(isT3Chart and t3_on and e3 and not isNewDay ? t3_tgt : na, "CALL Target", color=color.black)
 
 f_alert(e4, "ENTRY "  + sym4 + " $" + str.tostring(k4) + " " + exp4)
-f_alert(a4, "ADD VWAP " + sym1 + " $" + str.tostring(k1) + " " + exp1)
+f_alert(a4, "ADD VWAP " + sym4 + " $" + str.tostring(k4) + " " + exp4)
 f_alert(s4, "STOP "   + sym4 + " $" + str.tostring(k4) + " " + exp4)
 f_alert(g4, "TARGET " + sym4 + " $" + str.tostring(k4) + " " + exp4)
-plot(t4_on and e4 and not isNewDay ? t4_res : na, "CALL Level", color=color.green, linewidth=2)
-plot(t4_on and e4 and not isNewDay ? t4_tgt : na, "CALL Target", color=color.black)
+isT4Chart = chartSym == t4_sym
+plot(isT4Chart and t4_on and e4 and not isNewDay ? t4_res : na, "CALL Level", color=color.green, linewidth=2)
+plot(isT4Chart and t4_on and e4 and not isNewDay ? t4_tgt : na, "CALL Target", color=color.black)
 
 f_alert(e5, "ENTRY "  + sym5 + " $" + str.tostring(k5) + " " + exp5)
-f_alert(a5, "ADD VWAP " + sym1 + " $" + str.tostring(k1) + " " + exp1)
+f_alert(a5, "ADD VWAP " + sym5 + " $" + str.tostring(k5) + " " + exp5)
 f_alert(s5, "STOP "   + sym5 + " $" + str.tostring(k5) + " " + exp5)
 f_alert(g5, "TARGET " + sym5 + " $" + str.tostring(k5) + " " + exp5)
-plot(t5_on and e5 and not isNewDay ? t5_res : na, "CALL Level", color=color.green, linewidth=2)
-plot(t5_on and e5 and not isNewDay ? t5_tgt : na, "CALL Target", color=color.black)
+isT5Chart = chartSym == t5_sym
+plot(isT5Chart and t5_on and e5 and not isNewDay ? t5_res : na, "CALL Level", color=color.green, linewidth=2)
+plot(isT5Chart and t5_on and e5 and not isNewDay ? t5_tgt : na, "CALL Target", color=color.black)
