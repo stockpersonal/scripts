@@ -1,0 +1,121 @@
+//@version=5
+indicator("Tradewar SPY Options Assistant", overlay=true)
+
+// ================= INPUTS =================
+enableCalls = input.bool(true, "Enable CALL Trades")
+enablePuts  = input.bool(true, "Enable PUT Trades")
+expDate     = input.string("DEC-19-25", "Expiration")
+
+callStrike = input.int(677, "CALL Strike Price")
+callTarget  = input.float(679.0, "CALL Target")
+callLevel   = input.float(676.6, "CALL Resistance Level")
+
+putStrike  = input.int(674, "PUT Strike Price")
+putTarget   = input.float(672.5, "PUT Target")
+putLevel    = input.float(674.8, "PUT Support Level")
+
+ema_fast_len = input.int(8, "EMA Fast")
+ema_slow_len = input.int(21, "EMA Slow")
+use_pdh_pdl  = input.bool(true, "Use PDH / PDL Filter")
+holdBars = input.int(2, "Hold Candles Required", minval=1)
+stopPct     = input.float(0.4, "Stop % (~30%)") / 100
+confirmClose = input.bool(true, "Confirm on Candle Close")
+
+// ================= INDICATORS =================
+ema8  = ta.ema(close, ema_fast_len)
+ema21 = ta.ema(close, ema_slow_len)
+vwap_val = ta.vwap(hlc3)
+
+// ================= 🔑 RTH PDH / PDL =================
+rthTicker = ticker.new(syminfo.prefix, syminfo.ticker, session=session.regular)
+pdh = request.security(rthTicker, "D", high[1], lookahead=barmerge.lookahead_off)
+pdl = request.security(rthTicker, "D", low[1],  lookahead=barmerge.lookahead_off)
+
+// ================= TREND =================
+bull_trend = ema8 > ema21 and close > vwap_val
+bear_trend = ema8 < ema21 and close < vwap_val
+
+retest_bull = bull_trend and low <= ema8 and close > ema8 and close > open
+retest_bear = bear_trend and high >= ema8 and close < ema8 and close < open
+
+pdh_signal = use_pdh_pdl and bull_trend and close > pdh and close > open
+pdl_signal = use_pdh_pdl and bear_trend and close < pdl and close < open
+
+// ================= STATE =================
+var bool inTrade    = false
+var string side     = ""
+var bool stopFired  = false
+var float entry     = na
+var float stopPrice = na
+
+// ================= DAILY RESET =================
+if ta.change(time("D")) > 0
+    inTrade := false
+    side := ""
+    stopFired := false
+    entry := na
+    stopPrice := na
+
+// ================= BREAKOUT =================
+callBreak = confirmClose ? close > callLevel : high > callLevel
+putBreak  = confirmClose ? close < putLevel  : low < putLevel
+
+// ================= CANDLE HOLD COUNTER =================
+var int callHoldCount = 0
+var int putHoldCount  = 0
+
+// CALL hold logic
+if close > callLevel
+    callHoldCount += 1
+else
+    callHoldCount := 0
+
+// PUT hold logic
+if close < putLevel
+    putHoldCount += 1
+else
+    putHoldCount := 0
+
+callHoldConfirmed = callHoldCount >= holdBars
+putHoldConfirmed  = putHoldCount  >= holdBars
+
+// ================= FINAL ENTRY CONDITIONS =================
+callEntry = enableCalls and callBreak and callHoldConfirmed and bull_trend and (retest_bull or pdh_signal) and not inTrade
+putEntry  = enablePuts  and putBreak  and putHoldConfirmed and bear_trend and (retest_bear or pdl_signal) and not inTrade
+
+// ================= ENTRIES =================
+if callEntry
+    inTrade := true
+    side := "CALL"
+    stopFired := false
+    entry := close
+    stopPrice := entry * (1 - stopPct)
+
+    label.new(bar_index, high, "CALL", style=label.style_label_up, color=color.green, textcolor=color.white)
+    alert("📈 SPY CALL ENTRY | STRIKE $" + str.tostring(callStrike) + " | TARGET $" + str.tostring(callTarget) + " | EXP " + expDate, alert.freq_once_per_bar_close)
+
+if putEntry
+    inTrade := true
+    side := "PUT"
+    stopFired := false
+    entry := close
+    stopPrice := entry * (1 + stopPct)
+
+    label.new(bar_index, low, "PUT", style=label.style_label_down, color=color.red, textcolor=color.white)
+    alert("📉 SPY PUT ENTRY | STRIKE $" + str.tostring(putStrike) + " | TARGET $" + str.tostring(putTarget) +" | EXP " + expDate, alert.freq_once_per_bar_close)
+
+// ================= STOP =================
+stopHit = inTrade and not stopFired and ((side == "CALL" and close < stopPrice) or (side == "PUT"  and close > stopPrice))
+
+if stopHit
+    stopFired := true
+    inTrade := false
+
+    label.new(bar_index, close,"STOP", style=label.style_label_left, color=color.orange, textcolor=color.black)
+    alert("🛑 SPY " + side + " STOP HIT | STRIKE $" + str.tostring(side == "CALL" ? callStrike : putStrike) + " | EXP " + expDate, alert.freq_once_per_bar_close)
+
+// ================= PLOTS =================
+plot(side == "CALL" and inTrade ? callLevel : na, "CALL Level", color=color.green, linewidth=2)
+plot(side == "PUT"  and inTrade ? putLevel : na,  "PUT Level",  color=color.red, linewidth=2)
+plot(side == "CALL" and inTrade ? callTarget : na, "CALL Target", color=color.black)
+plot(side == "PUT"  and inTrade ? putTarget  : na, "PUT Target",  color=color.black)
