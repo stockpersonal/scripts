@@ -1,0 +1,192 @@
+
+//@version=5
+indicator("Tradewar Options Assistant Multiple", overlay=true, dynamic_requests=true)
+// =======================
+// GLOBAL TOGGLES
+// =======================
+useEMAFilter     = input.bool(true,  "Use EMA Trend Filter")
+useVWAPFilter    = input.bool(true,  "Use VWAP Filter")
+useVolumeFilter  = input.bool(true,  "Use Volume Filter")
+useCandleConfirm   = input.bool(true,  "Use Bullish Candle Confirmation")
+confirmOnClose   = input.bool(true, "Confirm Signals On Candle Close")
+fastEntry        = input.bool(false, "Allow Fast Intrabar Breakout")
+
+breakoutBufferPct = input.float(0.15, "Breakout Buffer %", step=0.05)
+holdBars   = input.int(2, "Hold Above Resistance (Candles)", minval=1)
+retestPct  = input.float(0.5, "Retest Zone % (±%)", step=0.1)
+volLen     = input.int(20, "Volume MA Length")
+noProgBars    = input.int(6, "No-Progress Exit (Bars)", minval=3)
+
+// =======================
+// RTH FILTER
+// =======================
+afterOpen = not na(time(timeframe.period, session.regular))
+
+// =======================
+// DAILY RESET
+// =======================
+isNewDay = ta.change(time("D")) > 0
+
+// =====================
+// CORE FUNCTION
+// =====================
+f_trade(sym, strike, expiry, tgt, res, enabled) =>
+    if not enabled
+        [false, false, false, false, sym, strike, expiry]
+    else
+        // ===== PRICE DATA + INDICATORS =====
+        [price, high_, low_, open_, open1_, close1_, vol_, emaFast, emaSlow, vwapVal, volMA] = request.security(sym, timeframe.period, [close, high, low, open, open[1], close[1], volume, ta.ema(close, 8), ta.ema(close, 21), ta.vwap(hlc3), ta.sma(volume, volLen)])
+
+        filtersOK = (not useEMAFilter or emaFast > emaSlow) and (not useVWAPFilter or price > vwapVal) and (not useVolumeFilter or vol_ > volMA)
+
+        // ===== PRICE ACTION CONFIRMATION =====
+        bullishEngulfing = price > open_ and close1_ < open1_ and price > open1_
+        bullishPin = price > open_ and (open_ - low_) > (high_ - price) * 1.5
+        priceActionOK = not useCandleConfirm or (bullishEngulfing or bullishPin)
+
+        // ===== BREAK → RETEST → HOLD =====
+        breakoutLevel = res * (1 + breakoutBufferPct / 100)
+        broke = high_ >= breakoutLevel  //broke = ta.crossover(price, res)
+
+        lower  = res * (1 - retestPct / 100)
+        upper  = res * (1 + retestPct / 100)
+        retest = low_ <= upper and high_ >= lower
+
+        above  = price > res
+        holdOK = above and ta.barssince(not above) >= holdBars - 1
+
+        entry  = broke and retest and holdOK and filtersOK and priceActionOK and (fastEntry or barstate.isconfirmed)
+        
+        // ===== STATE TRACKING =====
+        var bool inTrade   = false
+        var bool vwapLost  = false
+        var bool addonUsed = false
+        var int  vwapLossCount = 0
+
+        if entry
+            inTrade        := true
+            vwapLost       := false
+            addonUsed      := false
+            vwapLossCount  := 0
+
+        if inTrade and ta.crossunder(price, vwapVal)
+            vwapLost      := true
+            vwapLossCount += 1
+
+        if price > vwapVal
+            vwapLossCount := 0
+
+        // ===== VWAP RECLAIM ADD-ON =====
+        addonEntry = inTrade and vwapLost and not addonUsed and ta.crossover(price, vwapVal) and price > res and filtersOK and barstate.isconfirmed
+
+        if addonEntry
+            addonUsed := true
+
+        // ===== STOPS & TARGET =====
+        stop = ta.crossunder(price, res) or vwapLossCount >= 2
+        //stop   = ta.crossunder(price, res) or ta.crossunder(price, vwapVal)
+        target = ta.crossover(price, tgt)
+        if stop or target
+            inTrade := false
+            vwapLost := false
+            addonUsed := false
+
+        [entry, addonEntry, stop, target, sym, strike, expiry]
+
+// =====================
+// 🔹 TICKER 1
+// =====================
+t1_on     = input.bool(true, "T1 Enable")
+t1_sym    = input.string("MU", "T1 Symbol")
+t1_strike = input.float(255, "T1 Strike")
+t1_exp    = input.string("DEC-19-25", "T1 Expiry")
+t1_tgt    = input.float(270, "T1 Target")
+t1_res    = input.float(259, "T1 Resistance")
+
+// =====================
+// 🔹 TICKER 2
+// =====================
+t2_on     = input.bool(true, "T2 Enable")
+t2_sym    = input.string("RIVN", "T2 Symbol")
+t2_strike = input.float(18, "T2 Strike")
+t2_exp    = input.string("DEC-19-25", "T2 Expiry")
+t2_tgt    = input.float(18.75, "T2 Target")
+t2_res    = input.float(18.29, "T2 Resistance")
+
+// =====================
+// 🔹 TICKER 3
+// =====================
+t3_on     = input.bool(true, "T3 Enable")
+t3_sym    = input.string("AAPL", "T3 Symbol")
+t3_strike = input.float(200, "T3 Strike")
+t3_exp    = input.string("DEC-19-25", "T3 Expiry")
+t3_tgt    = input.float(215, "T3 Target")
+t3_res    = input.float(205, "T3 Resistance")
+
+// =====================
+// 🔹 TICKER 4
+// =====================
+t4_on     = input.bool(true, "T4 Enable")
+t4_sym    = input.string("TSLA", "T4 Symbol")
+t4_strike = input.float(300, "T4 Strike")
+t4_exp    = input.string("DEC-19-25", "T4 Expiry")
+t4_tgt    = input.float(325, "T4 Target")
+t4_res    = input.float(305, "T4 Resistance")
+
+// =====================
+// 🔹 TICKER 5
+// =====================
+t5_on     = input.bool(true, "T5 Enable")
+t5_sym    = input.string("NVDA", "T5 Symbol")
+t5_strike = input.float(600, "T5 Strike")
+t5_exp    = input.string("DEC-19-25", "T5 Expiry")
+t5_tgt    = input.float(650, "T5 Target")
+t5_res    = input.float(610, "T5 Resistance")
+
+[e1, a1, s1, g1, sym1, k1, exp1] = f_trade(t1_sym, t1_strike, t1_exp, t1_tgt, t1_res, t1_on)
+[e2, a2, s2, g2, sym2, k2, exp2] = f_trade(t2_sym, t2_strike, t2_exp, t2_tgt, t2_res, t2_on)
+[e3, a3, s3, g3, sym3, k3, exp3] = f_trade(t3_sym, t3_strike, t3_exp, t3_tgt, t3_res, t3_on)
+[e4, a4, s4, g4, sym4, k4, exp4] = f_trade(t4_sym, t4_strike, t4_exp, t4_tgt, t4_res, t4_on)
+[e5, a5, s5, g5, sym5, k5, exp5] = f_trade(t5_sym, t5_strike, t5_exp, t5_tgt, t5_res, t5_on)
+
+// =====================
+// 🔹 ALERTS
+// =====================
+f_alert(cond, msg) =>
+    if afterOpen and cond
+        alert(msg, alert.freq_once_per_bar)
+
+f_alert(e1, "ENTRY "  + sym1 + " $" + str.tostring(k1) + " " + exp1)
+f_alert(a1, "ADD VWAP " + sym1 + " $" + str.tostring(k1) + " " + exp1)
+f_alert(s1, "STOP "   + sym1 + " $" + str.tostring(k1) + " " + exp1)
+f_alert(g1, "TARGET " + sym1 + " $" + str.tostring(k1) + " " + exp1)
+plot(t1_on and e1 and not isNewDay ? t1_res : na, "CALL Level", color=color.green, linewidth=2)
+plot(t1_on and e1 and not isNewDay ? t1_tgt : na, "CALL Target", color=color.black)
+
+f_alert(e2, "ENTRY "  + sym2 + " $" + str.tostring(k2) + " " + exp2)
+f_alert(a2, "ADD VWAP " + sym1 + " $" + str.tostring(k1) + " " + exp1)
+f_alert(s2, "STOP "   + sym2 + " $" + str.tostring(k2) + " " + exp2)
+f_alert(g2, "TARGET " + sym2 + " $" + str.tostring(k2) + " " + exp2)
+plot(t2_on and e2 and not isNewDay ? t2_res : na, "CALL Level", color=color.green, linewidth=2)
+plot(t2_on and e2 and not isNewDay ? t2_tgt : na, "CALL Target", color=color.black)
+
+f_alert(e3, "ENTRY "  + sym3 + " $" + str.tostring(k3) + " " + exp3)
+f_alert(a3, "ADD VWAP " + sym1 + " $" + str.tostring(k1) + " " + exp1)
+f_alert(s3, "STOP "   + sym3 + " $" + str.tostring(k3) + " " + exp3)
+f_alert(g3, "TARGET " + sym3 + " $" + str.tostring(k3) + " " + exp3)
+plot(t3_on and e3 and not isNewDay ? t3_res : na, "CALL Level", color=color.green, linewidth=2)
+plot(t3_on and e3 and not isNewDay ? t3_tgt : na, "CALL Target", color=color.black)
+
+f_alert(e4, "ENTRY "  + sym4 + " $" + str.tostring(k4) + " " + exp4)
+f_alert(a4, "ADD VWAP " + sym1 + " $" + str.tostring(k1) + " " + exp1)
+f_alert(s4, "STOP "   + sym4 + " $" + str.tostring(k4) + " " + exp4)
+f_alert(g4, "TARGET " + sym4 + " $" + str.tostring(k4) + " " + exp4)
+plot(t4_on and e4 and not isNewDay ? t4_res : na, "CALL Level", color=color.green, linewidth=2)
+plot(t4_on and e4 and not isNewDay ? t4_tgt : na, "CALL Target", color=color.black)
+
+f_alert(e5, "ENTRY "  + sym5 + " $" + str.tostring(k5) + " " + exp5)
+f_alert(a5, "ADD VWAP " + sym1 + " $" + str.tostring(k1) + " " + exp1)
+f_alert(s5, "STOP "   + sym5 + " $" + str.tostring(k5) + " " + exp5)
+f_alert(g5, "TARGET " + sym5 + " $" + str.tostring(k5) + " " + exp5)
+plot(t5_on and e5 and not isNewDay ? t5_res : na, "CALL Level", color=color.green, linewidth=2)
+plot(t5_on and e5 and not isNewDay ? t5_tgt : na, "CALL Target", color=color.black)
