@@ -1,4 +1,3 @@
-
 //@version=5
 indicator("Tradewar Options Assistant Multiple", overlay=true, dynamic_requests=true)
 // =======================
@@ -11,6 +10,16 @@ useCandleConfirm   = input.bool(true,  "Use Bullish Candle Confirmation")
 confirmOnClose   = input.bool(true, "Confirm Signals On Candle Close")
 fastEntry        = input.bool(false, "Allow Fast Intrabar Breakout")
 
+// =======================
+// MOMENTUM MODE
+// =======================
+useMomentumMode     = input.bool(false, "Momentum Breakout Mode")
+momentumVolMult    = input.float(1.8, "Momentum Volume Multiplier", step=0.1)
+momentumRangeMult  = input.float(1.3, "Momentum Candle Range Multiplier", step=0.1)
+
+// =======================
+// STRUCTURE INPUTS
+// =======================
 breakoutBufferPct = input.float(0.15, "Breakout Buffer %", step=0.05)
 holdBars   = input.int(2, "Hold Above Resistance (Candles)", minval=1)
 retestPct  = input.float(0.5, "Retest Zone % (±%)", step=0.1)
@@ -60,7 +69,14 @@ f_trade(sym, strike, expiry, tgt, res, enabled) =>
         above  = price > res
         holdOK = above and ta.barssince(not above) >= holdBars - 1
 
-        entry  = broke and retest and holdOK and filtersOK and priceActionOK and (fastEntry or barstate.isconfirmed)
+        // ===== MOMENTUM BREAKOUT =====
+        candleRange = high_ - low_
+        avgRange    = ta.sma(high_ - low_, 20)
+        momentumCandle = candleRange > avgRange * momentumRangeMult and vol_ > volMA * momentumVolMult and price > res and emaFast > emaSlow and price > vwapVal
+        standardEntry = broke and retest and holdOK and filtersOK and priceActionOK
+        momentumEntry =  useMomentumMode and broke and momentumCandle and filtersOK
+
+        entry  = (standardEntry or momentumEntry) and (fastEntry or barstate.isconfirmed)
         
         // ===== STATE TRACKING =====
         var bool inTrade   = false
