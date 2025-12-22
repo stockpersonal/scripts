@@ -1,3 +1,4 @@
+
 //@version=5
 indicator("Tradewar Options Assistant Multiple", overlay=true, dynamic_requests=true)
 // =======================
@@ -13,7 +14,6 @@ fastEntry        = input.bool(false, "Allow Fast Intrabar Breakout")
 // =======================
 // MOMENTUM MODE
 // =======================
-useMomentumMode     = input.bool(false, "Momentum Breakout Mode")
 momentumVolMult    = input.float(1.8, "Momentum Volume Multiplier", step=0.1)
 momentumRangeMult  = input.float(1.3, "Momentum Candle Range Multiplier", step=0.1)
 
@@ -36,15 +36,10 @@ afterOpen = not na(time(timeframe.period, session.regular))
 // =======================
 isNewDay = ta.change(time("D")) > 0
 
-// =======================
-// CURRENT CHART SYMBOL
-// =======================
-chartSym = syminfo.ticker
-
 // =====================
 // CORE FUNCTION
 // =====================
-f_trade(sym, strike, expiry, tgt, res, enabled) =>
+f_trade(sym, strike, expiry, tgt, res, enabled, momentumOn) =>
     if not enabled
         [false, false, false, false, sym, strike, expiry]
     else
@@ -74,7 +69,7 @@ f_trade(sym, strike, expiry, tgt, res, enabled) =>
         avgRange    = ta.sma(high_ - low_, 20)
         momentumCandle = candleRange > avgRange * momentumRangeMult and vol_ > volMA * momentumVolMult and price > res and emaFast > emaSlow and price > vwapVal
         standardEntry = broke and retest and holdOK and filtersOK and priceActionOK
-        momentumEntry =  useMomentumMode and broke and momentumCandle and filtersOK
+        momentumEntry =  momentumOn and broke and momentumCandle and filtersOK
 
         entry  = (standardEntry or momentumEntry) and (fastEntry or barstate.isconfirmed)
         
@@ -115,60 +110,61 @@ f_trade(sym, strike, expiry, tgt, res, enabled) =>
         [entry, addonEntry, stop, target, sym, strike, expiry]
 
 // =====================
-// 🔹 TICKER 1
+// 🔹 TICKERS
 // =====================
-t1_on     = input.bool(true, "T1 Enable")
-t1_sym    = input.string("MU", "T1 Symbol")
-t1_strike = input.float(255, "T1 Strike")
-t1_exp    = input.string("DEC-19-25", "T1 Expiry")
-t1_tgt    = input.float(270, "T1 Target")
-t1_res    = input.float(259, "T1 Resistance")
+// T1
+t1_on        = input.bool(true,  "T1 Enable")
+t1_momentum  = input.bool(false, "T1 Momentum Mode")
+t1_sym       = input.string("MU", "T1 Symbol")
+t1_strike    = input.float(255, "T1 Strike")
+t1_exp       = input.string("DEC-19-25", "T1 Expiry")
+t1_tgt       = input.float(270, "T1 Target")
+t1_res       = input.float(259, "T1 Resistance")
+
+// T2
+t2_on        = input.bool(true,  "T2 Enable")
+t2_momentum  = input.bool(true,  "T2 Momentum Mode")
+t2_sym       = input.string("RIVN", "T2 Symbol")
+t2_strike    = input.float(18, "T2 Strike")
+t2_exp       = input.string("DEC-19-25", "T2 Expiry")
+t2_tgt       = input.float(18.75, "T2 Target")
+t2_res       = input.float(18.29, "T2 Resistance")
+
+// T3
+t3_on        = input.bool(true,  "T3 Enable")
+t3_momentum  = input.bool(false, "T3 Momentum Mode")
+t3_sym       = input.string("AAPL", "T3 Symbol")
+t3_strike    = input.float(200, "T3 Strike")
+t3_exp       = input.string("DEC-19-25", "T3 Expiry")
+t3_tgt       = input.float(215, "T3 Target")
+t3_res       = input.float(205, "T3 Resistance")
+
+// T4
+t4_on        = input.bool(true,  "T4 Enable")
+t4_momentum  = input.bool(false, "T4 Momentum Mode")
+t4_sym       = input.string("TSLA", "T4 Symbol")
+t4_strike    = input.float(300, "T4 Strike")
+t4_exp       = input.string("DEC-19-25", "T4 Expiry")
+t4_tgt       = input.float(325, "T4 Target")
+t4_res       = input.float(305, "T4 Resistance")
+
+// T5
+t5_on        = input.bool(true,  "T5 Enable")
+t5_momentum  = input.bool(false, "T5 Momentum Mode")
+t5_sym       = input.string("NVDA", "T5 Symbol")
+t5_strike    = input.float(600, "T5 Strike")
+t5_exp       = input.string("DEC-19-25", "T5 Expiry")
+t5_tgt       = input.float(650, "T5 Target")
+t5_res       = input.float(610, "T5 Resistance")
 
 // =====================
-// 🔹 TICKER 2
+// 🔹 EXECUTION
 // =====================
-t2_on     = input.bool(true, "T2 Enable")
-t2_sym    = input.string("RIVN", "T2 Symbol")
-t2_strike = input.float(18, "T2 Strike")
-t2_exp    = input.string("DEC-19-25", "T2 Expiry")
-t2_tgt    = input.float(18.75, "T2 Target")
-t2_res    = input.float(18.29, "T2 Resistance")
-
-// =====================
-// 🔹 TICKER 3
-// =====================
-t3_on     = input.bool(true, "T3 Enable")
-t3_sym    = input.string("AAPL", "T3 Symbol")
-t3_strike = input.float(200, "T3 Strike")
-t3_exp    = input.string("DEC-19-25", "T3 Expiry")
-t3_tgt    = input.float(215, "T3 Target")
-t3_res    = input.float(205, "T3 Resistance")
-
-// =====================
-// 🔹 TICKER 4
-// =====================
-t4_on     = input.bool(true, "T4 Enable")
-t4_sym    = input.string("TSLA", "T4 Symbol")
-t4_strike = input.float(300, "T4 Strike")
-t4_exp    = input.string("DEC-19-25", "T4 Expiry")
-t4_tgt    = input.float(325, "T4 Target")
-t4_res    = input.float(305, "T4 Resistance")
-
-// =====================
-// 🔹 TICKER 5
-// =====================
-t5_on     = input.bool(true, "T5 Enable")
-t5_sym    = input.string("NVDA", "T5 Symbol")
-t5_strike = input.float(600, "T5 Strike")
-t5_exp    = input.string("DEC-19-25", "T5 Expiry")
-t5_tgt    = input.float(650, "T5 Target")
-t5_res    = input.float(610, "T5 Resistance")
-
-[e1, a1, s1, g1, sym1, k1, exp1] = f_trade(t1_sym, t1_strike, t1_exp, t1_tgt, t1_res, t1_on)
-[e2, a2, s2, g2, sym2, k2, exp2] = f_trade(t2_sym, t2_strike, t2_exp, t2_tgt, t2_res, t2_on)
-[e3, a3, s3, g3, sym3, k3, exp3] = f_trade(t3_sym, t3_strike, t3_exp, t3_tgt, t3_res, t3_on)
-[e4, a4, s4, g4, sym4, k4, exp4] = f_trade(t4_sym, t4_strike, t4_exp, t4_tgt, t4_res, t4_on)
-[e5, a5, s5, g5, sym5, k5, exp5] = f_trade(t5_sym, t5_strike, t5_exp, t5_tgt, t5_res, t5_on)
+[e1, a1, s1, g1, sym1, k1, exp1] = f_trade(t1_sym, t1_strike, t1_exp, t1_tgt, t1_res, t1_on, t1_momentum)
+[e2, a2, s2, g2, sym2, k2, exp2] = f_trade(t2_sym, t2_strike, t2_exp, t2_tgt, t2_res, t2_on, t2_momentum)
+[e3, a3, s3, g3, sym3, k3, exp3] = f_trade(t3_sym, t3_strike, t3_exp, t3_tgt, t3_res, t3_on, t3_momentum)
+[e4, a4, s4, g4, sym4, k4, exp4] = f_trade(t4_sym, t4_strike, t4_exp, t4_tgt, t4_res, t4_on, t4_momentum)
+[e5, a5, s5, g5, sym5, k5, exp5] = f_trade(t5_sym, t5_strike, t5_exp, t5_tgt, t5_res, t5_on, t5_momentum)
 
 // =====================
 // 🔹 ALERTS
@@ -181,38 +177,77 @@ f_alert(e1, "ENTRY "  + sym1 + " $" + str.tostring(k1) + " " + exp1)
 f_alert(a1, "ADD VWAP " + sym1 + " $" + str.tostring(k1) + " " + exp1)
 f_alert(s1, "STOP "   + sym1 + " $" + str.tostring(k1) + " " + exp1)
 f_alert(g1, "TARGET " + sym1 + " $" + str.tostring(k1) + " " + exp1)
-isT1Chart = chartSym == t1_sym
-plot(isT1Chart and t1_on and e1 and not isNewDay ? t1_res : na, "CALL Level", color=color.green, linewidth=2)
-plot(isT1Chart and t1_on and e1 and not isNewDay ? t1_tgt : na, "CALL Target", color=color.black)
 
 f_alert(e2, "ENTRY "  + sym2 + " $" + str.tostring(k2) + " " + exp2)
 f_alert(a2, "ADD VWAP " + sym2 + " $" + str.tostring(k2) + " " + exp2)
 f_alert(s2, "STOP "   + sym2 + " $" + str.tostring(k2) + " " + exp2)
 f_alert(g2, "TARGET " + sym2 + " $" + str.tostring(k2) + " " + exp2)
-isT2Chart = chartSym == t2_sym
-plot(isT2Chart and t2_on and e2 and not isNewDay ? t2_res : na, "CALL Level", color=color.green, linewidth=2)
-plot(isT2Chart and t2_on and e2 and not isNewDay ? t2_tgt : na, "CALL Target", color=color.black)
 
 f_alert(e3, "ENTRY "  + sym3 + " $" + str.tostring(k3) + " " + exp3)
 f_alert(a3, "ADD VWAP " + sym3 + " $" + str.tostring(k3) + " " + exp3)
 f_alert(s3, "STOP "   + sym3 + " $" + str.tostring(k3) + " " + exp3)
 f_alert(g3, "TARGET " + sym3 + " $" + str.tostring(k3) + " " + exp3)
-isT3Chart = chartSym == t3_sym
-plot(isT3Chart and t3_on and e3 and not isNewDay ? t3_res : na, "CALL Level", color=color.green, linewidth=2)
-plot(isT3Chart and t3_on and e3 and not isNewDay ? t3_tgt : na, "CALL Target", color=color.black)
 
 f_alert(e4, "ENTRY "  + sym4 + " $" + str.tostring(k4) + " " + exp4)
 f_alert(a4, "ADD VWAP " + sym4 + " $" + str.tostring(k4) + " " + exp4)
 f_alert(s4, "STOP "   + sym4 + " $" + str.tostring(k4) + " " + exp4)
 f_alert(g4, "TARGET " + sym4 + " $" + str.tostring(k4) + " " + exp4)
-isT4Chart = chartSym == t4_sym
-plot(isT4Chart and t4_on and e4 and not isNewDay ? t4_res : na, "CALL Level", color=color.green, linewidth=2)
-plot(isT4Chart and t4_on and e4 and not isNewDay ? t4_tgt : na, "CALL Target", color=color.black)
 
 f_alert(e5, "ENTRY "  + sym5 + " $" + str.tostring(k5) + " " + exp5)
 f_alert(a5, "ADD VWAP " + sym5 + " $" + str.tostring(k5) + " " + exp5)
 f_alert(s5, "STOP "   + sym5 + " $" + str.tostring(k5) + " " + exp5)
 f_alert(g5, "TARGET " + sym5 + " $" + str.tostring(k5) + " " + exp5)
+
+// =====================
+// 🔹 REUSABLE PLOT MANAGER
+// =====================
+f_managePlots(isActiveChart, enabled, entry, stop, target, resLevel, tgtLevel, isNewDay ) =>
+    var float plotRes = na
+    var float plotTgt = na
+    // Reset daily
+    if isNewDay
+        plotRes := na
+        plotTgt := na
+    // Set on entry
+    if isActiveChart and enabled and entry
+        plotRes := resLevel
+        plotTgt := tgtLevel
+    // Clear on exit
+    if stop or target
+        plotRes := na
+        plotTgt := na
+    [plotRes, plotTgt]
+
+// =====================================
+// CURRENT CHART SYMBOL && ACTIVE CHECK
+// =====================================
+chartSym = syminfo.ticker
+isT1Chart = chartSym == t1_sym
+isT2Chart = chartSym == t2_sym
+isT3Chart = chartSym == t3_sym
+isT4Chart = chartSym == t4_sym
 isT5Chart = chartSym == t5_sym
-plot(isT5Chart and t5_on and e5 and not isNewDay ? t5_res : na, "CALL Level", color=color.green, linewidth=2)
-plot(isT5Chart and t5_on and e5 and not isNewDay ? t5_tgt : na, "CALL Target", color=color.black)
+
+[t1_resPlot, t1_tgtPlot] = f_managePlots(isT1Chart, t1_on, e1, s1, g1, t1_res, t1_tgt, isNewDay)
+[t2_resPlot, t2_tgtPlot] = f_managePlots(isT2Chart, t2_on, e2, s2, g2, t2_res, t2_tgt, isNewDay)
+[t3_resPlot, t3_tgtPlot] = f_managePlots(isT3Chart, t3_on, e3, s3, g3, t3_res, t3_tgt, isNewDay)
+[t4_resPlot, t4_tgtPlot] = f_managePlots(isT4Chart, t4_on, e4, s4, g4, t4_res, t4_tgt, isNewDay)
+[t5_resPlot, t5_tgtPlot] = f_managePlots(isT5Chart, t5_on, e5, s5, g5, t5_res, t5_tgt, isNewDay)
+
+// =====================
+// 🔹 PLOTS
+// =====================
+plot(isT1Chart ? t1_resPlot : na, "T1 CALL Level",  color=color.green, linewidth=2, style=plot.style_linebr)
+plot(isT1Chart ? t1_tgtPlot : na, "T1 CALL Target", color=color.black, style=plot.style_linebr)
+
+plot(isT2Chart ? t2_resPlot : na, "T2 CALL Level",  color=color.green, linewidth=2, style=plot.style_linebr)
+plot(isT2Chart ? t2_tgtPlot : na, "T2 CALL Target", color=color.black, style=plot.style_linebr)
+
+plot(isT3Chart ? t3_resPlot : na, "T3 CALL Level",  color=color.green, linewidth=2, style=plot.style_linebr)
+plot(isT3Chart ? t3_tgtPlot : na, "T3 CALL Target", color=color.black, style=plot.style_linebr)
+
+plot(isT4Chart ? t4_resPlot : na, "T4 CALL Level",  color=color.green, linewidth=2, style=plot.style_linebr)
+plot(isT4Chart ? t4_tgtPlot : na, "T4 CALL Target", color=color.black, style=plot.style_linebr)
+
+plot(isT5Chart ? t5_resPlot : na, "T5 CALL Level",  color=color.green, linewidth=2, style=plot.style_linebr)
+plot(isT5Chart ? t5_tgtPlot : na, "T5 CALL Target", color=color.black, style=plot.style_linebr)
