@@ -463,39 +463,39 @@ sendAlert(condition, title, symbol, strikePrice, expiryDate, resLevel, targetLev
         alert(str.format("{0} {1} | ${2} {3} | Res ${4} | Tgt ${5} | Conf {6}%", title, symbol, strikePrice, expiryDate, resLevel, targetLevel, confLevel), alert.freq_once_per_bar)
 
 // T1 Alerts
-sendAlert(watch1,  "[WATCH]",  sym1, strike1, expiry1, res1, t1_tgt, conf1)
-sendAlert(entry1,  "[ENTRY]",  sym1, strike1, expiry1, res1, t1_tgt, conf1)
-sendAlert(addon1,  "[ADD]",    sym1, strike1, expiry1, res1, t1_tgt, conf1)
-sendAlert(exit1,   "[EXIT]",   sym1, strike1, expiry1, res1, t1_tgt, conf1)
-sendAlert(target1, "[TARGET]", sym1, strike1, expiry1, res1, t1_tgt, conf1)
+sendAlert(watch1,  "[EARLY CALL]",  sym1, strike1, expiry1, res1, t1_tgt, conf1)
+sendAlert(entry1,  "[CONFIRMED CALL]",  sym1, strike1, expiry1, res1, t1_tgt, conf1)
+sendAlert(addon1,  "[ADD CALL]",    sym1, strike1, expiry1, res1, t1_tgt, conf1)
+sendAlert(exit1,   "[STOP]",   sym1, strike1, expiry1, res1, t1_tgt, conf1)
+sendAlert(target1, "[TARGET HIT]", sym1, strike1, expiry1, res1, t1_tgt, conf1)
 
 // T2 Alerts
-sendAlert(watch2,  "[WATCH]",  sym2, strike2, expiry2, res2, t2_tgt, conf2)
-sendAlert(entry2,  "[ENTRY]",  sym2, strike2, expiry2, res2, t2_tgt, conf2)
-sendAlert(addon2,  "[ADD]",    sym2, strike2, expiry2, res2, t2_tgt, conf2)
-sendAlert(exit2,   "[EXIT]",   sym2, strike2, expiry2, res2, t2_tgt, conf2)
-sendAlert(target2, "[TARGET]", sym2, strike2, expiry2, res2, t2_tgt, conf2)
+sendAlert(watch2,  "[EARLY CALL]",  sym2, strike2, expiry2, res2, t2_tgt, conf2)
+sendAlert(entry2,  "[CONFIRMED CALL]",  sym2, strike2, expiry2, res2, t2_tgt, conf2)
+sendAlert(addon2,  "[ADD CALL]",    sym2, strike2, expiry2, res2, t2_tgt, conf2)
+sendAlert(exit2,   "[STOP]",   sym2, strike2, expiry2, res2, t2_tgt, conf2)
+sendAlert(target2, "[TARGET HIT]", sym2, strike2, expiry2, res2, t2_tgt, conf2)
 
 // T3 Alerts
-sendAlert(watch3,  "[WATCH]",  sym3, strike3, expiry3, res3, t3_tgt, conf3)
-sendAlert(entry3,  "[ENTRY]",  sym3, strike3, expiry3, res3, t3_tgt, conf3)
-sendAlert(addon3,  "[ADD]",    sym3, strike3, expiry3, res3, t3_tgt, conf3)
-sendAlert(exit3,   "[EXIT]",   sym3, strike3, expiry3, res3, t3_tgt, conf3)
-sendAlert(target3, "[TARGET]", sym3, strike3, expiry3, res3, t3_tgt, conf3)
+sendAlert(watch3,  "[EARLY CALL]",  sym3, strike3, expiry3, res3, t3_tgt, conf3)
+sendAlert(entry3,  "[CONFIRMED CALL]",  sym3, strike3, expiry3, res3, t3_tgt, conf3)
+sendAlert(addon3,  "[ADD CALL]",    sym3, strike3, expiry3, res3, t3_tgt, conf3)
+sendAlert(exit3,   "[STOP]",   sym3, strike3, expiry3, res3, t3_tgt, conf3)
+sendAlert(target3, "[TARGET HIT]", sym3, strike3, expiry3, res3, t3_tgt, conf3)
 
 // T4 Alerts
-sendAlert(watch4,  "[WATCH]",  sym4, strike4, expiry4, res4, t4_tgt, conf4)
-sendAlert(entry4,  "[ENTRY]",  sym4, strike4, expiry4, res4, t4_tgt, conf4)
-sendAlert(addon4,  "[ADD]",    sym4, strike4, expiry4, res4, t4_tgt, conf4)
-sendAlert(exit4,   "[EXIT]",   sym4, strike4, expiry4, res4, t4_tgt, conf4)
-sendAlert(target4, "[TARGET]", sym4, strike4, expiry4, res4, t4_tgt, conf4)
+sendAlert(watch4,  "[EARLY CALL]",  sym4, strike4, expiry4, res4, t4_tgt, conf4)
+sendAlert(entry4,  "[CONFIRMED CALL]",  sym4, strike4, expiry4, res4, t4_tgt, conf4)
+sendAlert(addon4,  "[ADD CALL]",    sym4, strike4, expiry4, res4, t4_tgt, conf4)
+sendAlert(exit4,   "[STOP]",   sym4, strike4, expiry4, res4, t4_tgt, conf4)
+sendAlert(target4, "[TARGET HIT]", sym4, strike4, expiry4, res4, t4_tgt, conf4)
 
 // T5 Alerts
-sendAlert(watch5,  "[WATCH]",  sym5, strike5, expiry5, res5, t5_tgt, conf5)
-sendAlert(entry5,  "[ENTRY]",  sym5, strike5, expiry5, res5, t5_tgt, conf5)
-sendAlert(addon5,  "[ADD]",    sym5, strike5, expiry5, res5, t5_tgt, conf5)
-sendAlert(exit5,   "[EXIT]",   sym5, strike5, expiry5, res5, t5_tgt, conf5)
-sendAlert(target5, "[TARGET]", sym5, strike5, expiry5, res5, t5_tgt, conf5)
+sendAlert(watch5,  "[EARLY CALL]",  sym5, strike5, expiry5, res5, t5_tgt, conf5)
+sendAlert(entry5,  "[CONFIRMED CALL]",  sym5, strike5, expiry5, res5, t5_tgt, conf5)
+sendAlert(addon5,  "[ADD CALL]",    sym5, strike5, expiry5, res5, t5_tgt, conf5)
+sendAlert(exit5,   "[STOP]",   sym5, strike5, expiry5, res5, t5_tgt, conf5)
+sendAlert(target5, "[TARGET HIT]", sym5, strike5, expiry5, res5, t5_tgt, conf5)
 
 // =======================
 // PLOTS
