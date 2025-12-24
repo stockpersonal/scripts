@@ -1,40 +1,94 @@
-
 //@version=5
 indicator("Tradewar Options Assistant Multiple", overlay=true, dynamic_requests=true)
 
 // =======================
+// TICKERS CONFIG
+// =======================
+// Ticker 1
+t1_on  = input.bool(true, "Enable", group="Ticker 1")
+t1_mom = input.bool(true, "Momentum Mode", group="Ticker 1")
+t1_sym = input.string("ZIM", "Symbol", group="Ticker 1")
+t1_k   = input.float(21, "Strike", group="Ticker 1")
+t1_exp = input.string("DEC-26-25", "Expiry", group="Ticker 1")
+t1_tgt = input.float(23, "Target", group="Ticker 1")
+t1_res = input.float(21.79, "Resistance", group="Ticker 1")
+
+// Ticker 2
+t2_on  = input.bool(true, "Enable", group="Ticker 2")
+t2_mom = input.bool(true, "Momentum Mode", group="Ticker 2")
+t2_sym = input.string("GDX", "Symbol", group="Ticker 2")
+t2_k   = input.float(91, "Strike", group="Ticker 2")
+t2_exp = input.string("DEC-19-25", "Expiry", group="Ticker 2")
+t2_tgt = input.float(92, "Target", group="Ticker 2")
+t2_res = input.float(91.22, "Resistance", group="Ticker 2")
+
+// Ticker 3
+t3_on  = input.bool(true, "Enable", group="Ticker 3")
+t3_mom = input.bool(true, "Momentum Mode", group="Ticker 3")
+t3_sym = input.string("SLV", "Symbol", group="Ticker 3")
+t3_k   = input.float(64, "Strike", group="Ticker 3")
+t3_exp = input.string("DEC-19-25", "Expiry", group="Ticker 3")
+t3_tgt = input.float(64.75, "Target", group="Ticker 3")
+t3_res = input.float(64, "Resistance", group="Ticker 3")
+
+// Ticker 4
+t4_on  = input.bool(true, "Enable", group="Ticker 4")
+t4_mom = input.bool(true, "Momentum Mode", group="Ticker 4")
+t4_sym = input.string("FSLR", "Symbol", group="Ticker 4")
+t4_k   = input.float(285, "Strike", group="Ticker 4")
+t4_exp = input.string("DEC-26-25", "Expiry", group="Ticker 4")
+t4_tgt = input.float(295, "Target", group="Ticker 4")
+t4_res = input.float(286, "Resistance", group="Ticker 4")
+
+// Ticker 5
+t5_on  = input.bool(false, "Enable", group="Ticker 5")
+t5_mom = input.bool(true, "Momentum Mode", group="Ticker 5")
+t5_sym = input.string("BMNR", "Symbol", group="Ticker 5")
+t5_k   = input.float(33, "Strike", group="Ticker 5")
+t5_exp = input.string("DEC-19-25", "Expiry", group="Ticker 5")
+t5_tgt = input.float(34, "Target", group="Ticker 5")
+t5_res = input.float(33, "Resistance", group="Ticker 5")
+
+// =======================
 // GLOBAL TOGGLES
 // =======================
-useEMAFilter        = input.bool(true,  "Use EMA Trend Filter")
-useVWAPFilter       = input.bool(true,  "Use VWAP Filter")
-useVolumeFilter     = input.bool(true,  "Use Volume Filter")
-useCandleConfirm    = input.bool(true,  "Use Bullish Candle Confirmation")
-confirmOnClose      = input.bool(true,  "Confirm Signals On Candle Close")
-fastEntry           = input.bool(false, "Allow Fast Intrabar Breakout")
+useEMAFilter        = input.bool(true,  "Use EMA Trend Filter", group="Filters")
+useVWAPFilter       = input.bool(true,  "Use VWAP Filter", group="Filters")
+useVolumeFilter     = input.bool(true,  "Use Volume Filter", group="Filters")
+useCandleConfirm    = input.bool(true,  "Use Bullish Candle Confirmation", group="Filters")
+confirmOnClose      = input.bool(true,  "Confirm Signals On Candle Close", group="Filters")
+fastEntry           = input.bool(false, "Allow Fast Intrabar Breakout", group="Filters")
 
 // =======================
 // CONFIDENCE FILTER
 // =======================
-baseMinConfidence = input.int(65, "Minimum Confidence to Enter", minval=0, maxval=100)
+baseMinConfidence = input.int(65, "Minimum Confidence to Enter", minval=0, maxval=100, group="Confidence")
 
 // =======================
 // EARLY WARNING INPUT
 // =======================
-earlyWarnPct = input.float(0.25, "Early Warning % before Resistance", step=0.05)
+earlyWarnPct = input.float(0.25, "Early Warning % before Resistance", step=0.05, group="Early Warning")
 
 // =======================
 // MOMENTUM MODE
 // =======================
-momentumVolMult   = input.float(1.8, "Momentum Volume Multiplier", step=0.1)
-momentumRangeMult = input.float(1.3, "Momentum Candle Range Multiplier", step=0.1)
+momentumVolMult   = input.float(1.8, "Momentum Volume Multiplier", step=0.1, group="Momentum")
+momentumRangeMult = input.float(1.3, "Momentum Candle Range Multiplier", step=0.1, group="Momentum")
 
 // =======================
 // STRUCTURE INPUTS
 // =======================
-breakoutBufferPct = input.float(0.15, "Breakout Buffer %", step=0.05)
-holdBars          = input.int(2, "Hold Above Resistance (Candles)", minval=1)
-retestPct         = input.float(0.5, "Retest Zone % (±%)", step=0.1)
-volLen            = input.int(20, "Volume MA Length")
+breakoutBufferPct = input.float(0.15, "Breakout Buffer %", step=0.05, group="Structure")
+holdBars          = input.int(2, "Hold Above Resistance (Candles)", minval=1, group="Structure")
+retestPct         = input.float(0.5, "Retest Zone % (±%)", step=0.1, group="Structure")
+volLen            = input.int(20, "Volume MA Length", group="Structure")
+
+// =======================
+// FORCE EXIT SETTINGS
+// =======================
+useForceExit  = input.bool(true, "Use Force Exit", group="Force Exit")
+forceExitHour = input.int(15, "Force Exit Hour (ET)", minval=0, maxval=23, group="Force Exit")
+forceExitMin  = input.int(55, "Force Exit Minute", minval=0, maxval=59, group="Force Exit")
 
 // =======================
 // DASHBOARD SETTINGS
@@ -83,33 +137,35 @@ txtColor = color.white
 // =======================
 // HELPER FUNCTIONS
 // =======================
-f_fmtPrice(p) => na(p) ? "—" : str.tostring(p, "#.##")
+formatPrice(p) => na(p) ? "—" : str.tostring(p, "#.##")
 
-f_fmtPnl(pnl) => pnl == 0.0 ? "—" : (pnl > 0 ? "+" : "") + str.tostring(pnl, "#.##") + "%"
+getPosition() =>
+    dashPosition == "Top Right" ? position.top_right : dashPosition == "Top Left" ? position.top_left : dashPosition == "Bottom Right" ? position.bottom_right : position.bottom_left
 
-f_winRate(w, l) => w + l > 0 ? str.tostring(math.round(w / (w + l) * 100)) + "%" : "—"
+getSize() =>
+    dashSize == "Small" ? size.small : dashSize == "Large" ? size.large : size.normal
 
 // =======================
 // CORE TRADE FUNCTION
 // =======================
-f_trade(sym, idx, strike, expiry, tgt, res, enabled, momentumOn) =>
+processTrade(sym, idx, strike, expiry, targetPrice, resistance, enabled, momentumOn) =>
     if not enabled
         array.set(notesArr, idx, "OFF")
-        [false, false, false, false, false, false, sym, strike, expiry, 0, 0.0, res]
+        [false, false, false, false, false, false, sym, strike, expiry, 0, resistance]
     else
         // Security data
-        [px, hi, lo, op, op1, cl1, vol, emaF, emaS, vwap_, volMA, atr_] = request.security(sym, timeframe.period, [close, high, low, open, open[1], close[1], volume, ta.ema(close,8), ta.ema(close,21), ta.vwap(hlc3), ta.sma(volume,volLen), ta.atr(14)], lookahead=barmerge.lookahead_off)
+        [price, high_, low_, open_, prevOpen, prevClose, vol, emaFast, emaSlow, vwapVal, volAvg] = request.security(sym, timeframe.period, [close, high, low, open, open[1], close[1], volume, ta.ema(close,8), ta.ema(close,21), ta.vwap(hlc3), ta.sma(volume,volLen)], lookahead=barmerge.lookahead_off)
 
         // Filters
-        emaOK  = not useEMAFilter or emaF > emaS
-        vwapOK = not useVWAPFilter or px > vwap_
-        volOK  = not useVolumeFilter or vol >= volMA
+        emaOK  = not useEMAFilter or emaFast > emaSlow
+        vwapOK = not useVWAPFilter or price > vwapVal
+        volOK  = not useVolumeFilter or vol >= volAvg
         allFiltersOK = emaOK and vwapOK and volOK
 
         // Price action
-        bullEngulf = px > op and cl1 < op1 and px > op1
-        bullPin    = px > op and (op - lo) > (hi - px) * 1.5
-        paOK       = not useCandleConfirm or bullEngulf or bullPin
+        bullEngulf = price > open_ and prevClose < prevOpen and price > prevOpen
+        bullPin    = price > open_ and (open_ - low_) > (high_ - price) * 1.5
+        priceActionOK = not useCandleConfirm or bullEngulf or bullPin
 
         // Load state
         inTrade  = array.get(inTradeArr, idx)
@@ -132,41 +188,45 @@ f_trade(sym, idx, strike, expiry, tgt, res, enabled, momentumOn) =>
             array.set(pnlArr, idx, 0.0)
 
         // Setup levels
-        earlyLvl = res * (1 - earlyWarnPct / 100)
-        breakLvl = res * (1 + breakoutBufferPct / 100)
-        retestLo = res * (1 - retestPct / 100)
-        retestHi = res * (1 + retestPct / 100)
+        earlyLevel    = resistance * (1 - earlyWarnPct / 100)
+        breakoutLevel = resistance * (1 + breakoutBufferPct / 100)
+        retestLow     = resistance * (1 - retestPct / 100)
+        retestHigh    = resistance * (1 + retestPct / 100)
 
         // Conditions
-        earlyWatch = afterOpen and ta.crossover(px, earlyLvl) and px < res and allFiltersOK and not inTrade and not dayUsed
-        broke      = hi >= breakLvl
-        retest     = lo <= retestHi and hi >= retestLo
-        above      = px >= res
+        earlyWatch = afterOpen and ta.crossover(price, earlyLevel) and price < resistance and allFiltersOK and not inTrade and not dayUsed
+        broke      = high_ >= breakoutLevel
+        retest     = low_ <= retestHigh and high_ >= retestLow
+        above      = price >= resistance
         barsAbove  = ta.barssince(not above)
         holdOK     = above and barsAbove >= holdBars - 1
 
         // Momentum
-        candleRng = hi - lo
-        avgRng    = math.max(ta.sma(candleRng, 20), syminfo.mintick)
-        momCandle = candleRng > avgRng * momentumRangeMult and vol > volMA * momentumVolMult and px > res and emaF > emaS and px > vwap_
+        candleRange = high_ - low_
+        avgRange    = math.max(ta.sma(candleRange, 20), syminfo.mintick)
+        momCandle   = candleRange > avgRange * momentumRangeMult and vol > volAvg * momentumVolMult and price > resistance and emaFast > emaSlow and price > vwapVal
 
-        // Confidence
-        vwapSMA    = ta.sma(vwap_, 3)
+        // Confidence scoring
+        vwapSMA    = ta.sma(vwapVal, 3)
         vwapRising = vwapSMA > vwapSMA[1]
-        trendSc = (emaF > emaS ? 10 : 0) + (px > vwap_ ? 10 : 0) + (vwapRising ? 5 : 0)
-        volSc   = (vol > volMA ? 10 : 0) + (vol > volMA * 1.5 ? 10 : 0)
-        breakSc = (px >= res ? 10 : 0) + (holdOK ? 10 : 0) + (retest ? 5 : 0)
-        momSc   = (candleRng > avgRng ? 10 : 0) + (momCandle ? 10 : 0)
-        paSc    = paOK ? 10 : 0
-        conf    = math.min(trendSc + volSc + breakSc + momSc + paSc, 100)
-        minConf = momentumOn ? baseMinConfidence + 5 : baseMinConfidence - 5
+        trendScore    = (emaFast > emaSlow ? 10 : 0) + (price > vwapVal ? 10 : 0) + (vwapRising ? 5 : 0)
+        volumeScore   = (vol > volAvg ? 10 : 0) + (vol > volAvg * 1.5 ? 10 : 0)
+        breakoutScore = (price >= resistance ? 10 : 0) + (holdOK ? 10 : 0) + (retest ? 5 : 0)
+        momentumScore = (candleRange > avgRange ? 10 : 0) + (momCandle ? 10 : 0)
+        priceActionScore = priceActionOK ? 10 : 0
+        confidence = math.min(trendScore + volumeScore + breakoutScore + momentumScore + priceActionScore, 100)
+        minConfidence = momentumOn ? baseMinConfidence + 5 : baseMinConfidence - 5
 
         // Entry types
-        stdEntry = broke and retest and holdOK and allFiltersOK and paOK
-        momEntry = momentumOn and broke and momCandle and allFiltersOK and paOK
+        stdEntry = broke and retest and holdOK and allFiltersOK and priceActionOK
+        momEntry = momentumOn and broke and momCandle and allFiltersOK and priceActionOK
         isMom    = momEntry and not stdEntry
         
-        entry = afterOpen and conf >= minConf and not dayUsed and (stdEntry or momEntry) and (fastEntry or not confirmOnClose or barstate.isconfirmed)
+        entry = afterOpen and confidence >= minConfidence and not dayUsed and (stdEntry or momEntry) and (fastEntry or not confirmOnClose or barstate.isconfirmed)
+
+        // Force exit time check
+        forceExitTime = timestamp("America/New_York", year, month, dayofmonth, forceExitHour, forceExitMin)
+        forceExit = useForceExit and inTrade and time >= forceExitTime
 
         // ========== BUILD NOTES ==========
         notes = ""
@@ -176,9 +236,9 @@ f_trade(sym, idx, strike, expiry, tgt, res, enabled, momentumOn) =>
         else if dayUsed and not inTrade
             notes := "DONE TODAY"
         else if inTrade
-            vwapSt = vwapLost ? ("VWAP LOST x" + str.tostring(vwapCnt)) : "VWAP HOLD"
-            resSt  = px >= res ? "RES HOLD" : "RES LOST"
-            notes := vwapSt + " | " + resSt
+            vwapStatus = vwapLost ? ("VWAP LOST x" + str.tostring(vwapCnt)) : "VWAP HOLD"
+            resStatus  = price >= resistance ? "RES HOLD" : "RES LOST"
+            notes := vwapStatus + " | " + resStatus
         else
             // Pre-trade
             if not emaOK
@@ -188,16 +248,16 @@ f_trade(sym, idx, strike, expiry, tgt, res, enabled, momentumOn) =>
             else if not volOK
                 notes := "EMA HOLD | LOW VOL"
             else
-                pctTo = ((res - px) / px) * 100
+                pctToRes = ((resistance - price) / price) * 100
                 if broke and retest and holdOK
-                    notes := "READY | CONF:" + str.tostring(conf)
+                    notes := "READY | CONF:" + str.tostring(confidence)
                 else if broke and retest
                     holdNum = na(barsAbove) ? 0 : barsAbove
                     notes := "BROKE+RETEST | HOLD:" + str.tostring(holdNum) + "/" + str.tostring(holdBars)
                 else if broke
                     notes := "BROKE | WAIT RETEST"
-                else if pctTo > 0
-                    notes := "EMA HOLD | " + str.tostring(pctTo, "#.##") + "% TO RES"
+                else if pctToRes > 0
+                    notes := "EMA HOLD | " + str.tostring(pctToRes, "#.##") + "% TO RES"
                 else
                     notes := "EMA HOLD | AT RES"
                 if momCandle
@@ -210,21 +270,21 @@ f_trade(sym, idx, strike, expiry, tgt, res, enabled, momentumOn) =>
             addon    := false
             vwapCnt  := 0
             dayUsed  := true
-            array.set(entryPriceArr, idx, px)
+            array.set(entryPriceArr, idx, price)
             array.set(barsInTradeArr, idx, 0)
             array.set(addsCountArr, idx, 0)
             array.set(resultArr, idx, "OPEN")
             array.set(exitPriceArr, idx, na)
             typeStr = isMom ? "MOM" : "STD"
-            notes := "ENTRY " + typeStr + " @ " + str.tostring(px, "#.##")
+            notes := "ENTRY " + typeStr + " @ " + str.tostring(price, "#.##")
 
         // Bar counter
         if inTrade
             array.set(barsInTradeArr, idx, array.get(barsInTradeArr, idx) + 1)
 
         // ========== VWAP TRACKING ==========
-        crossUnder = inTrade and ta.crossunder(px, vwap_)
-        crossOver  = inTrade and ta.crossover(px, vwap_)
+        crossUnder = inTrade and ta.crossunder(price, vwapVal)
+        crossOver  = inTrade and ta.crossover(price, vwapVal)
         
         if crossUnder
             vwapLost := true
@@ -233,28 +293,27 @@ f_trade(sym, idx, strike, expiry, tgt, res, enabled, momentumOn) =>
 
         if crossOver and vwapLost
             notes := "VWAP RECLAIM"
-            if not addon and px >= res and conf >= minConf
+            vwapCnt := 0
+            if not addon and price >= resistance and confidence >= minConfidence
                 notes := notes + " | ADD OK"
 
-        if crossOver
-            vwapCnt := 0
-
         // ========== ADD-ON ==========
-        addonEntry = inTrade and not addon and vwapLost and crossOver and px >= res and conf >= minConf and barstate.isconfirmed
+        addonEntry = inTrade and not addon and vwapLost and crossOver and price >= resistance and confidence >= minConfidence and barstate.isconfirmed
 
         if addonEntry
             addon := true
+            vwapLost := false
             array.set(addsCountArr, idx, array.get(addsCountArr, idx) + 1)
             addNum = array.get(addsCountArr, idx)
-            notes := "ADD #" + str.tostring(addNum) + " @ " + str.tostring(px, "#.##")
+            notes := "ADD #" + str.tostring(addNum) + " @ " + str.tostring(price, "#.##")
 
         // ========== EXIT ==========
-        stop   = inTrade and (ta.crossunder(px, res) or vwapCnt >= 2)
-        target = inTrade and hi >= tgt
+        stopHit   = inTrade and (ta.crossunder(price, resistance) or vwapCnt >= 2)
+        targetHit = inTrade and high_ >= targetPrice
 
-        if stop or target
+        if forceExit and not stopHit and not targetHit
             entryP = array.get(entryPriceArr, idx)
-            exitP  = target ? tgt : px
+            exitP  = price
             array.set(exitPriceArr, idx, exitP)
             
             pnlPct = 0.0
@@ -262,7 +321,31 @@ f_trade(sym, idx, strike, expiry, tgt, res, enabled, momentumOn) =>
                 pnlPct := ((exitP - entryP) / entryP) * 100
                 array.set(pnlArr, idx, pnlPct)
             
-            if target
+            if pnlPct >= 0
+                array.set(resultArr, idx, "EOD+")
+                array.set(totalWinsArr, idx, array.get(totalWinsArr, idx) + 1)
+            else
+                array.set(resultArr, idx, "EOD-")
+                array.set(totalLossArr, idx, array.get(totalLossArr, idx) + 1)
+            
+            notes := "FORCE EXIT @ " + str.tostring(exitP, "#.##") + " | " + str.tostring(pnlPct, "#.##") + "%"
+            array.set(totalPnlArr, idx, array.get(totalPnlArr, idx) + pnlPct)
+            inTrade  := false
+            vwapLost := false
+            addon    := false
+            vwapCnt  := 0
+
+        else if stopHit or targetHit
+            entryP = array.get(entryPriceArr, idx)
+            exitP  = targetHit ? targetPrice : price
+            array.set(exitPriceArr, idx, exitP)
+            
+            pnlPct = 0.0
+            if not na(entryP) and entryP > 0
+                pnlPct := ((exitP - entryP) / entryP) * 100
+                array.set(pnlArr, idx, pnlPct)
+            
+            if targetHit
                 array.set(resultArr, idx, "WIN")
                 array.set(totalWinsArr, idx, array.get(totalWinsArr, idx) + 1)
                 notes := "TARGET @ " + str.tostring(exitP, "#.##") + " | " + str.tostring(pnlPct, "#.##") + "%"
@@ -276,6 +359,7 @@ f_trade(sym, idx, strike, expiry, tgt, res, enabled, momentumOn) =>
             inTrade  := false
             vwapLost := false
             addon    := false
+            vwapCnt  := 0
 
         // Save state
         array.set(notesArr, idx, notes)
@@ -287,50 +371,24 @@ f_trade(sym, idx, strike, expiry, tgt, res, enabled, momentumOn) =>
         array.set(lastDayArr, idx, lastDay)
 
         isChart = syminfo.ticker == sym or str.endswith(syminfo.tickerid, ":" + sym)
-        [entry, addonEntry, stop, target, earlyWatch, isChart, sym, strike, expiry, conf, px, res]
-
-// =======================
-// TICKERS CONFIG
-// =======================
-t1_on  = input.bool(true, "T1 Enable"),  t1_mom = input.bool(true, "T1 Momentum")
-t1_sym = input.string("ZIM", "T1 Symbol"), t1_k = input.float(21, "T1 Strike")
-t1_exp = input.string("DEC-26-25", "T1 Expiry"), t1_tgt = input.float(23, "T1 Target"), t1_res = input.float(21.79, "T1 Resistance")
-
-t2_on  = input.bool(true, "T2 Enable"),  t2_mom = input.bool(true, "T2 Momentum")
-t2_sym = input.string("GDX", "T2 Symbol"), t2_k = input.float(91, "T2 Strike")
-t2_exp = input.string("DEC-19-25", "T2 Expiry"), t2_tgt = input.float(92, "T2 Target"), t2_res = input.float(91.22, "T2 Resistance")
-
-t3_on  = input.bool(true, "T3 Enable"),  t3_mom = input.bool(true, "T3 Momentum")
-t3_sym = input.string("SLV", "T3 Symbol"), t3_k = input.float(64, "T3 Strike")
-t3_exp = input.string("DEC-19-25", "T3 Expiry"), t3_tgt = input.float(64.75, "T3 Target"), t3_res = input.float(64, "T3 Resistance")
-
-t4_on  = input.bool(true, "T4 Enable"),  t4_mom = input.bool(true, "T4 Momentum")
-t4_sym = input.string("FSLR", "T4 Symbol"), t4_k = input.float(285, "T4 Strike")
-t4_exp = input.string("DEC-26-25", "T4 Expiry"), t4_tgt = input.float(295, "T4 Target"), t4_res = input.float(286, "T4 Resistance")
-
-t5_on  = input.bool(false, "T5 Enable"), t5_mom = input.bool(true, "T5 Momentum")
-t5_sym = input.string("BMNR", "T5 Symbol"), t5_k = input.float(33, "T5 Strike")
-t5_exp = input.string("DEC-19-25", "T5 Expiry"), t5_tgt = input.float(34, "T5 Target"), t5_res = input.float(33, "T5 Resistance")
+        [entry, addonEntry, stopHit or forceExit, targetHit, earlyWatch, isChart, sym, strike, expiry, confidence, resistance]
 
 // =======================
 // EXECUTE TRADES
 // =======================
-[e1,a1,s1,g1,ew1,c1,sy1,k1,ex1,cf1,p1,r1] = f_trade(t1_sym, 0, t1_k, t1_exp, t1_tgt, t1_res, t1_on, t1_mom)
-[e2,a2,s2,g2,ew2,c2,sy2,k2,ex2,cf2,p2,r2] = f_trade(t2_sym, 1, t2_k, t2_exp, t2_tgt, t2_res, t2_on, t2_mom)
-[e3,a3,s3,g3,ew3,c3,sy3,k3,ex3,cf3,p3,r3] = f_trade(t3_sym, 2, t3_k, t3_exp, t3_tgt, t3_res, t3_on, t3_mom)
-[e4,a4,s4,g4,ew4,c4,sy4,k4,ex4,cf4,p4,r4] = f_trade(t4_sym, 3, t4_k, t4_exp, t4_tgt, t4_res, t4_on, t4_mom)
-[e5,a5,s5,g5,ew5,c5,sy5,k5,ex5,cf5,p5,r5] = f_trade(t5_sym, 4, t5_k, t5_exp, t5_tgt, t5_res, t5_on, t5_mom)
+[entry1, addon1, exit1, target1, watch1, isChart1, sym1, strike1, expiry1, conf1, res1] = processTrade(t1_sym, 0, t1_k, t1_exp, t1_tgt, t1_res, t1_on, t1_mom)
+[entry2, addon2, exit2, target2, watch2, isChart2, sym2, strike2, expiry2, conf2, res2] = processTrade(t2_sym, 1, t2_k, t2_exp, t2_tgt, t2_res, t2_on, t2_mom)
+[entry3, addon3, exit3, target3, watch3, isChart3, sym3, strike3, expiry3, conf3, res3] = processTrade(t3_sym, 2, t3_k, t3_exp, t3_tgt, t3_res, t3_on, t3_mom)
+[entry4, addon4, exit4, target4, watch4, isChart4, sym4, strike4, expiry4, conf4, res4] = processTrade(t4_sym, 3, t4_k, t4_exp, t4_tgt, t4_res, t4_on, t4_mom)
+[entry5, addon5, exit5, target5, watch5, isChart5, sym5, strike5, expiry5, conf5, res5] = processTrade(t5_sym, 4, t5_k, t5_exp, t5_tgt, t5_res, t5_on, t5_mom)
 
 // =======================
 // DASHBOARD
 // =======================
-var table dash = na
+var table dash = table.new(getPosition(), 8, 6, border_width=1, border_color=color.gray)
 
 if showDashboard and barstate.islast
-    pos = dashPosition == "Top Right" ? position.top_right : dashPosition == "Top Left" ? position.top_left : dashPosition == "Bottom Right" ? position.bottom_right : position.bottom_left
-    sz  = dashSize == "Small" ? size.small : dashSize == "Large" ? size.large : size.normal
-    
-    dash := table.new(pos, 10, 7, border_width=1, border_color=color.gray)
+    sz = getSize()
     
     // Header
     table.cell(dash, 0, 0, "SYM",    bgcolor=headerBg, text_color=txtColor, text_size=sz, text_halign=text.align_center)
@@ -338,145 +396,127 @@ if showDashboard and barstate.islast
     table.cell(dash, 2, 0, "EXIT",   bgcolor=headerBg, text_color=txtColor, text_size=sz, text_halign=text.align_center)
     table.cell(dash, 3, 0, "RESULT", bgcolor=headerBg, text_color=txtColor, text_size=sz, text_halign=text.align_center)
     table.cell(dash, 4, 0, "ADDS",   bgcolor=headerBg, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-    table.cell(dash, 5, 0, "P&L",    bgcolor=headerBg, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-    table.cell(dash, 6, 0, "BARS",   bgcolor=headerBg, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-    table.cell(dash, 7, 0, "WIN%",   bgcolor=headerBg, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-    table.cell(dash, 8, 0, "NOTES",  bgcolor=headerBg, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-    table.merge_cells(dash, 8, 0, 9, 0)
+    table.cell(dash, 5, 0, "BARS",   bgcolor=headerBg, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+    table.cell(dash, 6, 0, "NOTES",  bgcolor=headerBg, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+    table.merge_cells(dash, 6, 0, 7, 0)
     
     // T1
     if t1_on
-        table.cell(dash, 0, 1, t1_sym,                                   bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 1, 1, f_fmtPrice(array.get(entryPriceArr, 0)),  bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 2, 1, f_fmtPrice(array.get(exitPriceArr, 0)),   bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 3, 1, array.get(resultArr, 0),                  bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 4, 1, str.tostring(array.get(addsCountArr, 0)), bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 5, 1, f_fmtPnl(array.get(pnlArr, 0)),           bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 6, 1, str.tostring(array.get(barsInTradeArr,0)),bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 7, 1, f_winRate(array.get(totalWinsArr,0), array.get(totalLossArr,0)), bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 8, 1, array.get(notesArr, 0),                   bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_left)
-        table.merge_cells(dash, 8, 1, 9, 1)
+        table.cell(dash, 0, 1, t1_sym,                                     bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 1, 1, formatPrice(array.get(entryPriceArr, 0)),   bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 2, 1, formatPrice(array.get(exitPriceArr, 0)),    bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 3, 1, array.get(resultArr, 0),                    bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 4, 1, str.tostring(array.get(addsCountArr, 0)),   bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 5, 1, str.tostring(array.get(barsInTradeArr, 0)), bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 6, 1, array.get(notesArr, 0),                     bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_left)
+        table.merge_cells(dash, 6, 1, 7, 1)
     
     // T2
     if t2_on
-        table.cell(dash, 0, 2, t2_sym,                                   bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 1, 2, f_fmtPrice(array.get(entryPriceArr, 1)),  bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 2, 2, f_fmtPrice(array.get(exitPriceArr, 1)),   bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 3, 2, array.get(resultArr, 1),                  bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 4, 2, str.tostring(array.get(addsCountArr, 1)), bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 5, 2, f_fmtPnl(array.get(pnlArr, 1)),           bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 6, 2, str.tostring(array.get(barsInTradeArr,1)),bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 7, 2, f_winRate(array.get(totalWinsArr,1), array.get(totalLossArr,1)), bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 8, 2, array.get(notesArr, 1),                   bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_left)
-        table.merge_cells(dash, 8, 2, 9, 2)
+        table.cell(dash, 0, 2, t2_sym,                                     bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 1, 2, formatPrice(array.get(entryPriceArr, 1)),   bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 2, 2, formatPrice(array.get(exitPriceArr, 1)),    bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 3, 2, array.get(resultArr, 1),                    bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 4, 2, str.tostring(array.get(addsCountArr, 1)),   bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 5, 2, str.tostring(array.get(barsInTradeArr, 1)), bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 6, 2, array.get(notesArr, 1),                     bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_left)
+        table.merge_cells(dash, 6, 2, 7, 2)
     
     // T3
     if t3_on
-        table.cell(dash, 0, 3, t3_sym,                                   bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 1, 3, f_fmtPrice(array.get(entryPriceArr, 2)),  bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 2, 3, f_fmtPrice(array.get(exitPriceArr, 2)),   bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 3, 3, array.get(resultArr, 2),                  bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 4, 3, str.tostring(array.get(addsCountArr, 2)), bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 5, 3, f_fmtPnl(array.get(pnlArr, 2)),           bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 6, 3, str.tostring(array.get(barsInTradeArr,2)),bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 7, 3, f_winRate(array.get(totalWinsArr,2), array.get(totalLossArr,2)), bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 8, 3, array.get(notesArr, 2),                   bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_left)
-        table.merge_cells(dash, 8, 3, 9, 3)
+        table.cell(dash, 0, 3, t3_sym,                                     bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 1, 3, formatPrice(array.get(entryPriceArr, 2)),   bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 2, 3, formatPrice(array.get(exitPriceArr, 2)),    bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 3, 3, array.get(resultArr, 2),                    bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 4, 3, str.tostring(array.get(addsCountArr, 2)),   bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 5, 3, str.tostring(array.get(barsInTradeArr, 2)), bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 6, 3, array.get(notesArr, 2),                     bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_left)
+        table.merge_cells(dash, 6, 3, 7, 3)
     
     // T4
     if t4_on
-        table.cell(dash, 0, 4, t4_sym,                                   bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 1, 4, f_fmtPrice(array.get(entryPriceArr, 3)),  bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 2, 4, f_fmtPrice(array.get(exitPriceArr, 3)),   bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 3, 4, array.get(resultArr, 3),                  bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 4, 4, str.tostring(array.get(addsCountArr, 3)), bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 5, 4, f_fmtPnl(array.get(pnlArr, 3)),           bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 6, 4, str.tostring(array.get(barsInTradeArr,3)),bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 7, 4, f_winRate(array.get(totalWinsArr,3), array.get(totalLossArr,3)), bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 8, 4, array.get(notesArr, 3),                   bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_left)
-        table.merge_cells(dash, 8, 4, 9, 4)
+        table.cell(dash, 0, 4, t4_sym,                                     bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 1, 4, formatPrice(array.get(entryPriceArr, 3)),   bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 2, 4, formatPrice(array.get(exitPriceArr, 3)),    bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 3, 4, array.get(resultArr, 3),                    bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 4, 4, str.tostring(array.get(addsCountArr, 3)),   bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 5, 4, str.tostring(array.get(barsInTradeArr, 3)), bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 6, 4, array.get(notesArr, 3),                     bgcolor=rowBg2, text_color=txtColor, text_size=sz, text_halign=text.align_left)
+        table.merge_cells(dash, 6, 4, 7, 4)
     
     // T5
     if t5_on
-        table.cell(dash, 0, 5, t5_sym,                                   bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 1, 5, f_fmtPrice(array.get(entryPriceArr, 4)),  bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 2, 5, f_fmtPrice(array.get(exitPriceArr, 4)),   bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 3, 5, array.get(resultArr, 4),                  bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 4, 5, str.tostring(array.get(addsCountArr, 4)), bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 5, 5, f_fmtPnl(array.get(pnlArr, 4)),           bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 6, 5, str.tostring(array.get(barsInTradeArr,4)),bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 7, 5, f_winRate(array.get(totalWinsArr,4), array.get(totalLossArr,4)), bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-        table.cell(dash, 8, 5, array.get(notesArr, 4),                   bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_left)
-        table.merge_cells(dash, 8, 5, 9, 5)
-    
-    // Footer
-    gW = array.get(totalWinsArr,0)+array.get(totalWinsArr,1)+array.get(totalWinsArr,2)+array.get(totalWinsArr,3)+array.get(totalWinsArr,4)
-    gL = array.get(totalLossArr,0)+array.get(totalLossArr,1)+array.get(totalLossArr,2)+array.get(totalLossArr,3)+array.get(totalLossArr,4)
-    gP = array.get(totalPnlArr,0)+array.get(totalPnlArr,1)+array.get(totalPnlArr,2)+array.get(totalPnlArr,3)+array.get(totalPnlArr,4)
-    
-    table.cell(dash, 0, 6, str.tostring(gW)+"W/"+str.tostring(gL)+"L", bgcolor=headerBg, text_color=txtColor, text_size=sz, text_halign=text.align_left)
-    table.merge_cells(dash, 0, 6, 3, 6)
-    table.cell(dash, 4, 6, "WIN:"+f_winRate(gW,gL), bgcolor=headerBg, text_color=txtColor, text_size=sz, text_halign=text.align_center)
-    table.merge_cells(dash, 4, 6, 5, 6)
-    table.cell(dash, 6, 6, "P&L:"+f_fmtPnl(gP), bgcolor=headerBg, text_color=txtColor, text_size=sz, text_halign=text.align_left)
-    table.merge_cells(dash, 6, 6, 9, 6)
+        table.cell(dash, 0, 5, t5_sym,                                     bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 1, 5, formatPrice(array.get(entryPriceArr, 4)),   bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 2, 5, formatPrice(array.get(exitPriceArr, 4)),    bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 3, 5, array.get(resultArr, 4),                    bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 4, 5, str.tostring(array.get(addsCountArr, 4)),   bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 5, 5, str.tostring(array.get(barsInTradeArr, 4)), bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_center)
+        table.cell(dash, 6, 5, array.get(notesArr, 4),                     bgcolor=rowBg1, text_color=txtColor, text_size=sz, text_halign=text.align_left)
+        table.merge_cells(dash, 6, 5, 7, 5)
 
 // =======================
 // ALERTS
 // =======================
-f_alert(cond, title, sym, strike, exp, lvl, tgt, conf) =>
-    if afterOpen and cond
-        alert(str.format("{0} {1} | ${2} {3} | Res ${4} | Tgt ${5} | Conf {6}%", title, sym, strike, exp, lvl, tgt, conf), alert.freq_once_per_bar)
+sendAlert(condition, title, symbol, strikePrice, expiryDate, resLevel, targetLevel, confLevel) =>
+    if afterOpen and condition
+        alert(str.format("{0} {1} | ${2} {3} | Res ${4} | Tgt ${5} | Conf {6}%", title, symbol, strikePrice, expiryDate, resLevel, targetLevel, confLevel), alert.freq_once_per_bar)
 
 // T1 Alerts
-f_alert(ew1, "[WATCH]",  sy1, k1, ex1, r1, t1_tgt, cf1)
-f_alert(e1,  "[ENTRY]",  sy1, k1, ex1, r1, t1_tgt, cf1)
-f_alert(a1,  "[ADD]",    sy1, k1, ex1, r1, t1_tgt, cf1)
-f_alert(s1,  "[STOP]",   sy1, k1, ex1, r1, t1_tgt, cf1)
-f_alert(g1,  "[TARGET]", sy1, k1, ex1, r1, t1_tgt, cf1)
+sendAlert(watch1,  "[WATCH]",  sym1, strike1, expiry1, res1, t1_tgt, conf1)
+sendAlert(entry1,  "[ENTRY]",  sym1, strike1, expiry1, res1, t1_tgt, conf1)
+sendAlert(addon1,  "[ADD]",    sym1, strike1, expiry1, res1, t1_tgt, conf1)
+sendAlert(exit1,   "[EXIT]",   sym1, strike1, expiry1, res1, t1_tgt, conf1)
+sendAlert(target1, "[TARGET]", sym1, strike1, expiry1, res1, t1_tgt, conf1)
 
 // T2 Alerts
-f_alert(ew2, "[WATCH]",  sy2, k2, ex2, r2, t2_tgt, cf2)
-f_alert(e2,  "[ENTRY]",  sy2, k2, ex2, r2, t2_tgt, cf2)
-f_alert(a2,  "[ADD]",    sy2, k2, ex2, r2, t2_tgt, cf2)
-f_alert(s2,  "[STOP]",   sy2, k2, ex2, r2, t2_tgt, cf2)
-f_alert(g2,  "[TARGET]", sy2, k2, ex2, r2, t2_tgt, cf2)
+sendAlert(watch2,  "[WATCH]",  sym2, strike2, expiry2, res2, t2_tgt, conf2)
+sendAlert(entry2,  "[ENTRY]",  sym2, strike2, expiry2, res2, t2_tgt, conf2)
+sendAlert(addon2,  "[ADD]",    sym2, strike2, expiry2, res2, t2_tgt, conf2)
+sendAlert(exit2,   "[EXIT]",   sym2, strike2, expiry2, res2, t2_tgt, conf2)
+sendAlert(target2, "[TARGET]", sym2, strike2, expiry2, res2, t2_tgt, conf2)
 
 // T3 Alerts
-f_alert(ew3, "[WATCH]",  sy3, k3, ex3, r3, t3_tgt, cf3)
-f_alert(e3,  "[ENTRY]",  sy3, k3, ex3, r3, t3_tgt, cf3)
-f_alert(a3,  "[ADD]",    sy3, k3, ex3, r3, t3_tgt, cf3)
-f_alert(s3,  "[STOP]",   sy3, k3, ex3, r3, t3_tgt, cf3)
-f_alert(g3,  "[TARGET]", sy3, k3, ex3, r3, t3_tgt, cf3)
+sendAlert(watch3,  "[WATCH]",  sym3, strike3, expiry3, res3, t3_tgt, conf3)
+sendAlert(entry3,  "[ENTRY]",  sym3, strike3, expiry3, res3, t3_tgt, conf3)
+sendAlert(addon3,  "[ADD]",    sym3, strike3, expiry3, res3, t3_tgt, conf3)
+sendAlert(exit3,   "[EXIT]",   sym3, strike3, expiry3, res3, t3_tgt, conf3)
+sendAlert(target3, "[TARGET]", sym3, strike3, expiry3, res3, t3_tgt, conf3)
 
 // T4 Alerts
-f_alert(ew4, "[WATCH]",  sy4, k4, ex4, r4, t4_tgt, cf4)
-f_alert(e4,  "[ENTRY]",  sy4, k4, ex4, r4, t4_tgt, cf4)
-f_alert(a4,  "[ADD]",    sy4, k4, ex4, r4, t4_tgt, cf4)
-f_alert(s4,  "[STOP]",   sy4, k4, ex4, r4, t4_tgt, cf4)
-f_alert(g4,  "[TARGET]", sy4, k4, ex4, r4, t4_tgt, cf4)
+sendAlert(watch4,  "[WATCH]",  sym4, strike4, expiry4, res4, t4_tgt, conf4)
+sendAlert(entry4,  "[ENTRY]",  sym4, strike4, expiry4, res4, t4_tgt, conf4)
+sendAlert(addon4,  "[ADD]",    sym4, strike4, expiry4, res4, t4_tgt, conf4)
+sendAlert(exit4,   "[EXIT]",   sym4, strike4, expiry4, res4, t4_tgt, conf4)
+sendAlert(target4, "[TARGET]", sym4, strike4, expiry4, res4, t4_tgt, conf4)
 
 // T5 Alerts
-f_alert(ew5, "[WATCH]",  sy5, k5, ex5, r5, t5_tgt, cf5)
-f_alert(e5,  "[ENTRY]",  sy5, k5, ex5, r5, t5_tgt, cf5)
-f_alert(a5,  "[ADD]",    sy5, k5, ex5, r5, t5_tgt, cf5)
-f_alert(s5,  "[STOP]",   sy5, k5, ex5, r5, t5_tgt, cf5)
-f_alert(g5,  "[TARGET]", sy5, k5, ex5, r5, t5_tgt, cf5)
+sendAlert(watch5,  "[WATCH]",  sym5, strike5, expiry5, res5, t5_tgt, conf5)
+sendAlert(entry5,  "[ENTRY]",  sym5, strike5, expiry5, res5, t5_tgt, conf5)
+sendAlert(addon5,  "[ADD]",    sym5, strike5, expiry5, res5, t5_tgt, conf5)
+sendAlert(exit5,   "[EXIT]",   sym5, strike5, expiry5, res5, t5_tgt, conf5)
+sendAlert(target5, "[TARGET]", sym5, strike5, expiry5, res5, t5_tgt, conf5)
 
 // =======================
 // PLOTS
 // =======================
-actRes = c1 ? t1_res : c2 ? t2_res : c3 ? t3_res : c4 ? t4_res : c5 ? t5_res : na
-actTgt = c1 ? t1_tgt : c2 ? t2_tgt : c3 ? t3_tgt : c4 ? t4_tgt : c5 ? t5_tgt : na
-plot(actRes, "Resistance", color=color.orange, linewidth=2)
+activeResistance = isChart1 ? t1_res : isChart2 ? t2_res : isChart3 ? t3_res : isChart4 ? t4_res : isChart5 ? t5_res : na
+activeTarget     = isChart1 ? t1_tgt : isChart2 ? t2_tgt : isChart3 ? t3_tgt : isChart4 ? t4_tgt : isChart5 ? t5_tgt : na
+plot(activeResistance, "Resistance", color=color.orange, linewidth=2)
 
-actEntry = c1 ? e1 : c2 ? e2 : c3 ? e3 : c4 ? e4 : c5 ? e5 : false
-actStop  = c1 ? s1 : c2 ? s2 : c3 ? s3 : c4 ? s4 : c5 ? s5 : false
-actHit   = c1 ? g1 : c2 ? g2 : c3 ? g3 : c4 ? g4 : c5 ? g5 : false
+activeEntry  = isChart1 ? entry1 : isChart2 ? entry2 : isChart3 ? entry3 : isChart4 ? entry4 : isChart5 ? entry5 : false
+activeExit   = isChart1 ? exit1 : isChart2 ? exit2 : isChart3 ? exit3 : isChart4 ? exit4 : isChart5 ? exit5 : false
+activeTarget_= isChart1 ? target1 : isChart2 ? target2 : isChart3 ? target3 : isChart4 ? target4 : isChart5 ? target5 : false
 
-var float tgtLine = na
-if actEntry
-    tgtLine := actTgt
-if actStop or actHit
-    tgtLine := na
-plot(tgtLine, "Target", color=color.green, linewidth=2, style=plot.style_linebr)
+var float targetLine = na
+if activeEntry
+    targetLine := activeTarget
+if activeExit or activeTarget_
+    targetLine := na
+plot(targetLine, "Target", color=color.green, linewidth=2, style=plot.style_linebr)
+
+// Early warning label
+activeWatch  = isChart1 ? watch1 : isChart2 ? watch2 : isChart3 ? watch3 : isChart4 ? watch4 : isChart5 ? watch5 : false
+activeSymbol = isChart1 ? t1_sym : isChart2 ? t2_sym : isChart3 ? t3_sym : isChart4 ? t4_sym : isChart5 ? t5_sym : ""
+if activeWatch
+    label.new(bar_index, high, "⚠️ WATCH\n" + activeSymbol, style=label.style_label_down, color=color.yellow, textcolor=color.black, size=size.small)
