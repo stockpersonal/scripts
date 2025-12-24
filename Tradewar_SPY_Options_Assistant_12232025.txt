@@ -3,9 +3,9 @@ indicator("Tradewar SPY Options Assistant", overlay=true)
 
 //====================== INPUTS ======================
 // Trade Settings
-enableCalls   = input.bool(true, "Enable CALL Trades", group="Trade Settings")
-enablePuts    = input.bool(true, "Enable PUT Trades", group="Trade Settings")
-expDate    = input.string("DEC-24-25", "Expiration", group="Trade Settings")
+enableCalls      = input.bool(true, "Enable CALL Trades", group="Trade Settings")
+enablePuts       = input.bool(true, "Enable PUT Trades", group="Trade Settings")
+expirationDate   = input.string("DEC-24-25", "Expiration", group="Trade Settings")
 
 // CALL Levels
 callStrike = input.int(685, "CALL Strike", minval=1, group="CALL Levels")
@@ -14,26 +14,26 @@ callLevel  = input.float(685, "CALL Resistance", minval=0.01, group="CALL Levels
 
 // PUT Levels
 putStrike  = input.int(684, "PUT Strike", minval=1, group="PUT Levels")
-putTarget = input.float(681, "PUT Target", minval=0.01, group="PUT Levels")
-putLevel  = input.float(683.5, "PUT Support", minval=0.01, group="PUT Levels")
+putTarget  = input.float(681, "PUT Target", minval=0.01, group="PUT Levels")
+putLevel   = input.float(683.5, "PUT Support", minval=0.01, group="PUT Levels")
 
 // Filters
-enableScaleIn = input.bool(true, "Enable Scale-In", group="Trade Filters")
-maxAdds       = input.int(1, "Max Adds", minval=0, maxval=2, group="Trade Filters")
-skipMidSession = input.bool(false, "Skip MID Session (10:30-14:00)", group="Trade Filters")
-skipLowVol     = input.bool(false, "Skip Low Volatility", group="Trade Filters")
-requireVolConf = input.bool(false, "Require Volume Confirmation", group="Trade Filters")
-volMultiplier  = input.float(1.2, "Volume Threshold (x SMA)", minval=1.0, maxval=3.0, step=0.1, group="Trade Filters")
+enableScaleIn        = input.bool(true, "Enable Scale-In", group="Trade Filters")
+maxAdds              = input.int(1, "Max Adds", minval=0, maxval=2, group="Trade Filters")
+skipMidSession       = input.bool(false, "Skip MID Session (10:30-14:00)", group="Trade Filters")
+skipLowVol           = input.bool(false, "Skip Low Volatility", group="Trade Filters")
+requireVolumeConfirm = input.bool(false, "Require Volume Confirmation", group="Trade Filters")
+volumeMultiplier     = input.float(1.2, "Volume Threshold (x SMA)", minval=1.0, maxval=3.0, step=0.1, group="Trade Filters")
 
 // Risk Management
 enableDailyLimit = input.bool(false, "Enable Daily Loss Limit", group="Risk Management")
 maxDailyLossPct  = input.float(2.0, "Max Daily Loss %", minval=0.5, maxval=10.0, step=0.5, group="Risk Management")
 
 // Technical Settings
-emaFast       = input.int(8, "EMA Fast", minval=2, maxval=50, group="Technical Settings")
-emaSlow       = input.int(21, "EMA Slow", minval=5, maxval=200, group="Technical Settings")
+emaFastLen    = input.int(8, "EMA Fast", minval=2, maxval=50, group="Technical Settings")
+emaSlowLen    = input.int(21, "EMA Slow", minval=5, maxval=200, group="Technical Settings")
 holdBars      = input.int(2, "Hold Candles", minval=1, maxval=10, group="Technical Settings")
-atrLen        = input.int(14, "ATR Length", minval=1, maxval=50, group="Technical Settings")
+atrLength     = input.int(14, "ATR Length", minval=1, maxval=50, group="Technical Settings")
 atrMultiplier = input.float(1.5, "ATR Multiplier", minval=0.1, maxval=5.0, step=0.1, group="Technical Settings")
 
 // VWAP Settings
@@ -41,52 +41,31 @@ maxPullbackMinutes = input.int(30, "VWAP Pullback Minutes", minval=5, maxval=120
 acceptCooldownBars = input.int(5, "VWAP Cooldown Bars", minval=1, maxval=20, group="VWAP Settings")
 
 // Exit Settings
-trimPct            = input.float(20, "Trim %", minval=5, maxval=50, step=5, group="Exit Settings")
+trimPercent        = input.float(20, "Trim %", minval=5, maxval=50, step=5, group="Exit Settings")
 enableTrailingStop = input.bool(false, "Enable Trailing Stop", group="Exit Settings")
 trailAtrMultiplier = input.float(1.0, "Trail ATR Multiplier", minval=0.5, maxval=3.0, step=0.1, group="Exit Settings")
 trailActivationPct = input.float(50, "Trail Activation (% to target)", minval=20, maxval=100, step=10, group="Exit Settings")
 enableEodExit      = input.bool(false, "Auto-Exit at Session End", group="Exit Settings")
 
 // Display Settings
-showStatusPanel    = input.bool(true, "Show Status Panel", group="Display Settings")
-showEmaPlots       = input.bool(true, "Show EMA Lines", group="Display Settings")
-sessionEndWarning  = input.bool(true, "Session End Warning", group="Display Settings")
-showExtendedLog    = input.bool(true, "Show Extended Log Data", group="Display Settings")
-showFilterBlocks   = input.bool(false, "Show Filter Blocks on Chart", group="Display Settings")
+showStatusPanel     = input.bool(true, "Show Status Panel", group="Display Settings")
+sessionEndWarning   = input.bool(true, "Session End Warning", group="Display Settings")
+dashboardPosition   = input.string("Top Right", "Dashboard Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group="Display Settings")
+statusPanelPosition = input.string("Bottom Right", "Status Panel Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group="Display Settings")
 
 //======================
-// DASHBOARD COLOR THEME (SINGLE COLOR)
+// CONSTANTS & COLORS
 //======================
-baseColor  = color.new(#16213e, 0) 
+headerBg = color.new(#1a1a2e, 0)
+rowBg1   = color.new(#16213e, 0)
+rowBg2   = color.new(#0f3460, 0)
+txtColor = color.white
 
-bgHeader   = color.new(baseColor, 0)
-bgRow      = color.new(baseColor, 92)
-bgWin      = color.new(baseColor, 82)
-bgLoss     = color.new(baseColor, 78)
-bgEOD      = color.new(baseColor, 86)
-bgStats    = color.new(baseColor, 88)
-bgDivider  = color.new(baseColor, 94)
-
-txtHeader  = color.white
-txtBody    = color.black
-txtMuted   = color.new(color.black, 40)
-
-
-//====================== INPUT VALIDATION ======================
-validCallSetup = callTarget > callLevel
-validPutSetup  = putTarget < putLevel
-validEmaSetup  = emaSlow > emaFast
-
-if barstate.isfirst
-    if not validCallSetup
-        runtime.error("⚠️ CALL Target (" + str.tostring(callTarget) + ") must be > CALL Resistance (" + str.tostring(callLevel) + ")")
-    if not validPutSetup
-        runtime.error("⚠️ PUT Target (" + str.tostring(putTarget) + ") must be < PUT Support (" + str.tostring(putLevel) + ")")
-    if not validEmaSetup
-        runtime.error("⚠️ EMA Slow (" + str.tostring(emaSlow) + ") must be > EMA Fast (" + str.tostring(emaFast) + ")")
-
-//====================== SESSION ======================
-inSession = not na(time(timeframe.period, session.regular))
+//======================
+// HELPER FUNCTIONS
+//======================
+getPosition(pos) =>
+    pos == "Top Left" ? position.top_left : pos == "Top Right" ? position.top_right : pos == "Bottom Left" ? position.bottom_left : position.bottom_right
 
 getMinutesToClose() =>
     sessionEndHour = 16
@@ -95,13 +74,6 @@ getMinutesToClose() =>
     endMinutes = sessionEndHour * 60 + sessionEndMinute
     endMinutes - currentMinutes
 
-minutesToClose = getMinutesToClose()
-isSessionEndWarning = sessionEndWarning and minutesToClose <= 5 and minutesToClose > 0 and inSession
-isSessionEnd = minutesToClose <= 0 and minutesToClose[1] > 0 and inSession[1]
-
-isNewDay = ta.change(time("D")) != 0
-
-//====================== TIME OF DAY CLASSIFICATION ======================
 getTimeSession() =>
     h = hour
     m = minute
@@ -120,55 +92,102 @@ getTimeSession() =>
     else
         "—"
 
-currentSession = getTimeSession()
-
 getDayOfWeek() =>
     dow = dayofweek
     dow == dayofweek.monday ? "Mon" : dow == dayofweek.tuesday ? "Tue" : dow == dayofweek.wednesday ? "Wed" : dow == dayofweek.thursday ? "Thu" : dow == dayofweek.friday ? "Fri" : "Wknd"
 
-currentDayOfWeek = getDayOfWeek()
+getVwapDistance(price, vwapVal, atrVal) =>
+    dist = atrVal > 0 ? math.abs(price - vwapVal) / atrVal : 0.0
+    dist < 0.3 ? "Tight" : dist < 0.7 ? "Mod" : "Ext"
 
-//====================== INDICATORS ======================
-emaFastV = ta.ema(close, emaFast)
-emaSlowV = ta.ema(close, emaSlow)
-vwapV    = ta.vwap
-atrV     = ta.atr(atrLen)
+getCandleStrength() =>
+    body = math.abs(close - open)
+    rangeSize = high - low
+    bodyRatio = rangeSize > 0 ? body / rangeSize : 0
+    
+    if bodyRatio > 0.7
+        "Strong"
+    else if bodyRatio > 0.4
+        "Mod"
+    else
+        "Weak"
 
-volumeSma  = ta.sma(volume, 20)
-highVolume = volume > volumeSma * volMultiplier
+buildExitNotes(exitType, entryVwapDist, entryCandleStrength, entryEmaStrength, highVolumeAtEntry, vwapLostDuringTrade, vwapReclaimedAfterLoss, finalTrimmed) =>
+    string notes = ""
+    notes := entryVwapDist
+    notes := notes + "|" + entryCandleStrength
+    notes := notes + "|" + entryEmaStrength
+    notes := notes + "|" + (highVolumeAtEntry ? "HV" : "LV")
+    vwapNote = vwapLostDuringTrade ? (vwapReclaimedAfterLoss ? "VRclm" : "VLost") : "VHeld"
+    notes := notes + "|" + vwapNote
+    exitNote = exitType == "Target" ? "TGT" : exitType == "EOD" ? "EOD" : (finalTrimmed ? "BE" : "STP")
+    notes := notes + "|" + exitNote
+    notes
 
-atrSma = ta.sma(atrV, 50)
-atrState = atrV > atrSma * 1.3 ? "Hi" : atrV < atrSma * 0.7 ? "Lo" : "Nrm"
+//======================
+// POSITION CALCULATIONS
+//======================
+dashPos   = getPosition(dashboardPosition)
+statusPos = getPosition(statusPanelPosition)
 
-//====================== TREND ======================
-bullTrend = emaFastV > emaSlowV and close > vwapV
-bearTrend = emaFastV < emaSlowV and close < vwapV
-trendLive = bullTrend ? "Bull" : bearTrend ? "Bear" : "Neutral"
+//======================
+// INPUT VALIDATION
+//======================
+validCallSetup = callTarget > callLevel
+validPutSetup  = putTarget < putLevel
+validEmaSetup  = emaSlowLen > emaFastLen
 
-emaAligned = emaFastV > emaSlowV ? "Bull" : emaFastV < emaSlowV ? "Bear" : "Flat"
+//======================
+// INDICATORS
+//======================
+emaFast   = ta.ema(close, emaFastLen)
+emaSlow   = ta.ema(close, emaSlowLen)
+vwap      = ta.vwap
+atr       = ta.atr(atrLength)
+volumeSma = ta.sma(volume, 20)
+atrSma    = ta.sma(atr, 50)
 
-emaSpread = atrV > 0 ? math.abs(emaFastV - emaSlowV) / atrV : 0.0
+//======================
+// DERIVED CALCULATIONS
+//======================
+inSession           = not na(time(timeframe.period, session.regular))
+minutesToClose      = getMinutesToClose()
+isSessionEndWarning = sessionEndWarning and minutesToClose <= 5 and minutesToClose > 0 and inSession
+isSessionEnd        = minutesToClose <= 0 and minutesToClose[1] > 0 and inSession[1]
+isNewDay            = ta.change(time("D")) != 0
+currentSession      = getTimeSession()
+currentDayOfWeek    = getDayOfWeek()
+
+highVolume = volume > volumeSma * volumeMultiplier
+atrState   = atr > atrSma * 1.3 ? "Hi" : atr < atrSma * 0.7 ? "Lo" : "Nrm"
+
+bullTrend    = emaFast > emaSlow and close > vwap
+bearTrend    = emaFast < emaSlow and close < vwap
+currentTrend = bullTrend ? "Bull" : bearTrend ? "Bear" : "Neutral"
+emaAligned   = emaFast > emaSlow ? "Bull" : emaFast < emaSlow ? "Bear" : "Flat"
+emaSpread    = atr > 0 ? math.abs(emaFast - emaSlow) / atr : 0.0
 emaTrendStrength = emaSpread > 1.5 ? "Strong" : emaSpread > 0.5 ? "Mod" : "Weak"
 
-//====================== PERFORMANCE TRACKING ======================
-var int   totalWins     = 0
-var int   totalLosses   = 0
-var int   totalBE       = 0
-var float totalPnLPct   = 0.0
+barsPerMin      = timeframe.isminutes ? timeframe.multiplier : 1
+maxPullbackBars = math.max(1, math.round(maxPullbackMinutes / barsPerMin))
+
+sessionAllowed = not skipMidSession or currentSession != "MID"
+volAllowed     = not skipLowVol or atrState != "Lo"
+volumeAllowed  = not requireVolumeConfirm or highVolume
+
+//======================
+// STATE VARIABLES
+//======================
+// Daily tracking
 var float dailyPnLPct   = 0.0
 var bool  dailyLimitHit = false
 
-if isNewDay
-    dailyPnLPct   := 0.0
-    dailyLimitHit := false
-
-//====================== STATE ======================
+// Trade state
 var bool   inTrade         = false
-var string side            = ""
+var string tradeSide       = ""
 var string sideAtEntry     = ""
-var float  entry           = na
-var float  stopPx          = na
-var float  earlyEntry      = na
+var float  entryPrice      = na
+var float  stopPrice       = na
 var bool   earlyLockedCall = false
 var bool   earlyLockedPut  = false
 var int    addCount        = 0
@@ -181,70 +200,84 @@ var float  trimTarget      = na
 var int    entryBar        = na
 var bool   sessionEndAlerted = false
 
-//====================== ENHANCED NOTES TRACKING STATE ======================
-var string entryTimeSession  = ""
-var string entryDayOfWeek    = ""
-var string entryAtrState     = ""
-var string entryVwapDist     = ""
-var string entryCandleStr    = ""
-var string entryEmaStrength  = ""
-var float  entryAtrValue     = 0.0
-var float  entryStopDist     = 0.0
-var float  entryStopAtrMult  = 0.0
-var bool   highVolumeAtEntry = false
-var int    entryStrike       = 0
-var float  entryLevelDist    = 0.0
+// Entry tracking
+var string entryVwapDist        = ""
+var string entryCandleStrength  = ""
+var string entryEmaStrength     = ""
+var bool   highVolumeAtEntry    = false
 
+// In-trade condition tracking
 var bool   vwapLostDuringTrade     = false
 var bool   vwapReclaimedAfterLoss  = false
 var bool   emaFlippedDuringTrade   = false
 var string entryEmaState           = ""
 var int    vwapLossCount           = 0
+var bool   wasAboveVwapPrevBar     = false
+var bool   wasBelowVwapPrevBar     = false
+var float  mfePercent              = 0.0
+var bool   finalTrimmed            = false
 
-var bool wasAboveVwapPrevBar = false
-var bool wasBelowVwapPrevBar = false
-
-var float  maxFavorable     = 0.0
-var float  mfePercent       = 0.0
-var float  maxAdverse       = 0.0
-var float  maePercent       = 0.0
-
-var int    finalPositionSize = 0
-var int    finalAddCount     = 0
-var bool   finalTrimmed      = false
-
-//====================== EXIT EVENT TRACKING ======================
-var bool targetHitThisBar = false
-var bool stopHitThisBar = false
-var bool eodExitThisBar = false
-
-//====================== HOLD LOGIC ======================
+// Hold counters
 var int callHold = 0
 var int putHold  = 0
 
-if not inTrade and inSession
-    callHold := close > callLevel and close > vwapV ? callHold + 1 : 0
-    putHold  := close < putLevel  and close < vwapV ? putHold  + 1 : 0
-else
-    callHold := 0
-    putHold  := 0
-
-//====================== VWAP ACCEPTANCE ======================
-barsPerMin = timeframe.isminutes ? timeframe.multiplier : 1
-maxPullbackBars = math.max(1, math.round(maxPullbackMinutes / barsPerMin))
-
+// VWAP acceptance
 var bool vwapAcceptedCall  = false
 var bool vwapAcceptedPut   = false
 var int  vwapAcceptBarCall = na
 var int  vwapAcceptBarPut  = na
 
+// Dashboard storage arrays
+var string[] logSide   = array.new_string()
+var float[]  logEntry  = array.new_float()
+var float[]  logExit   = array.new_float()
+var string[] logResult = array.new_string()
+var int[]    logBars   = array.new_int()
+var string[] logNotes  = array.new_string()
+
+// Tables
+var table dash        = table.new(dashPos, 6, 9, border_width=1)
+var table statusPanel = table.new(statusPos, 2, 10, border_width=1)
+
+// Per-bar exit variables
+string exitReason  = ""
+float  exitPx      = na
+string finalNotes  = ""
+float  tradePnLPct = 0.0
+
+//====================== VALIDATION LOGIC ======================
+if barstate.isfirst
+    if not validCallSetup
+        runtime.error("⚠️ CALL Target (" + str.tostring(callTarget) + ") must be > CALL Resistance (" + str.tostring(callLevel) + ")")
+    if not validPutSetup
+        runtime.error("⚠️ PUT Target (" + str.tostring(putTarget) + ") must be < PUT Support (" + str.tostring(putLevel) + ")")
+    if not validEmaSetup
+        runtime.error("⚠️ EMA Slow (" + str.tostring(emaSlowLen) + ") must be > EMA Fast (" + str.tostring(emaFastLen) + ")")
+
+//====================== DAILY LIMIT RESET ======================
+if isNewDay
+    dailyPnLPct   := 0.0
+    dailyLimitHit := false
+
+//====================== DERIVED STATE ======================
+dailyLimitAllowed = not enableDailyLimit or not dailyLimitHit
+filtersPass = sessionAllowed and volAllowed and volumeAllowed and dailyLimitAllowed
 canAccept = na(lastExitBar) or bar_index - lastExitBar > acceptCooldownBars
 
+//====================== HOLD LOGIC ======================
+if not inTrade and inSession
+    callHold := close > callLevel and close > vwap ? callHold + 1 : 0
+    putHold  := close < putLevel  and close < vwap ? putHold  + 1 : 0
+else
+    callHold := 0
+    putHold  := 0
+
+//====================== VWAP ACCEPTANCE ======================
 if inSession and not inTrade and canAccept
-    if bullTrend and close > vwapV
+    if bullTrend and close > vwap
         vwapAcceptedCall  := true
         vwapAcceptBarCall := bar_index
-    if bearTrend and close < vwapV
+    if bearTrend and close < vwap
         vwapAcceptedPut  := true
         vwapAcceptBarPut := bar_index
 
@@ -257,80 +290,43 @@ if vwapAcceptedPut and bar_index - vwapAcceptBarPut > maxPullbackBars
     earlyLockedPut  := false
 
 //====================== VWAP RECLAIM ======================
-callReclaim = inSession and vwapAcceptedCall and low <= vwapV and close > vwapV
-putReclaim  = inSession and vwapAcceptedPut  and high >= vwapV and close < vwapV
-
-//====================== ENTRY QUALITY HELPERS ======================
-getVwapDistance(price, vwap, atr) =>
-    dist = atr > 0 ? math.abs(price - vwap) / atr : 0.0
-    dist < 0.3 ? "Tight" : dist < 0.7 ? "Mod" : "Ext"
-
-getCandleStrength() =>
-    body = math.abs(close - open)
-    range_size = high - low
-    bodyRatio = range_size > 0 ? body / range_size : 0
-    
-    if bodyRatio > 0.7
-        "Strong"
-    else if bodyRatio > 0.4
-        "Mod"
-    else
-        "Weak"
-
-getLevelDistance(price, level, atr) =>
-    atr > 0 ? math.abs(price - level) / atr : 0.0
-
-//====================== FILTER CONDITIONS ======================
-sessionAllowed = not skipMidSession or currentSession != "MID"
-volAllowed = not skipLowVol or atrState != "Lo"
-volumeAllowed = not requireVolConf or highVolume
-dailyLimitAllowed = not enableDailyLimit or not dailyLimitHit
-filtersPass = sessionAllowed and volAllowed and volumeAllowed and dailyLimitAllowed
+callReclaim = inSession and vwapAcceptedCall and low <= vwap and close > vwap
+putReclaim  = inSession and vwapAcceptedPut  and high >= vwap and close < vwap
 
 //====================== EARLY ALERT ======================
 if callReclaim and not earlyLockedCall and filtersPass
-    earlyEntry      := close
     earlyLockedCall := true
-    alert("⚠️ EARLY CALL | $" + str.tostring(callStrike) + " | EXP " + expDate + " | Price: $" + str.tostring(close, "#.##"), alert.freq_once_per_bar)
+    alert("[EARLY CALL] | $" + str.tostring(callStrike) + " | EXP " + expirationDate, alert.freq_once_per_bar_close)
 
 if putReclaim and not earlyLockedPut and filtersPass
-    earlyEntry     := close
     earlyLockedPut := true
-    alert("⚠️ EARLY PUT | $" + str.tostring(putStrike) + " | EXP " + expDate + " | Price: $" + str.tostring(close, "#.##"), alert.freq_once_per_bar)
+    alert("[EARLY PUT] | $" + str.tostring(putStrike) + " | EXP " + expirationDate, alert.freq_once_per_bar_close)
 
 //====================== ENTRY ======================
 callEntry = enableCalls and not inTrade and callHold >= holdBars and callReclaim and filtersPass
-putEntry  = enablePuts  and not inTrade and putHold  >= holdBars and putReclaim and filtersPass
+putEntry  = enablePuts  and not inTrade and putHold  >= holdBars and putReclaim  and filtersPass
 
 if callEntry
     inTrade           := true
-    side              := "CALL"
+    tradeSide         := "CALL"
     sideAtEntry       := "CALL"
-    entry             := close
-    stopPx            := close - atrMultiplier * atrV
+    entryPrice        := close
+    stopPrice         := close - atrMultiplier * atr
     positionSize      := 2
     addCount          := 0
     trimmed           := false
     runnerAlerted     := false
     earlyLockedCall   := false
     earlyLockedPut    := false
-    trimTarget        := entry + ((callTarget - entry) * trimPct / 100)
+    trimTarget        := entryPrice + ((callTarget - entryPrice) * trimPercent / 100)
     entryBar          := bar_index
     sessionEndAlerted := false
     
-    entryTimeSession    := currentSession
-    entryDayOfWeek      := currentDayOfWeek
-    entryAtrState       := atrState
-    entryVwapDist       := getVwapDistance(close, vwapV, atrV)
-    entryCandleStr      := getCandleStrength()
-    entryEmaStrength    := emaTrendStrength
-    entryEmaState       := emaAligned
-    entryAtrValue       := atrV
-    entryStopDist       := ((close - stopPx) / close) * 100
-    entryStopAtrMult    := atrMultiplier
-    highVolumeAtEntry   := highVolume
-    entryStrike         := callStrike
-    entryLevelDist      := getLevelDistance(close, callLevel, atrV)
+    entryVwapDist        := getVwapDistance(close, vwap, atr)
+    entryCandleStrength  := getCandleStrength()
+    entryEmaStrength     := emaTrendStrength
+    entryEmaState        := emaAligned
+    highVolumeAtEntry    := highVolume
     
     vwapLostDuringTrade    := false
     vwapReclaimedAfterLoss := false
@@ -338,42 +334,31 @@ if callEntry
     vwapLossCount          := 0
     wasAboveVwapPrevBar    := true
     wasBelowVwapPrevBar    := false
-    maxFavorable           := high
     mfePercent             := 0.0
-    maxAdverse             := low
-    maePercent             := entry > 0 ? math.max(0, ((entry - low) / entry) * 100) : 0.0
     
-    alert("📈 BUY CALL x2 | $" + str.tostring(callStrike) + " | EXP " + expDate + "\n• Entry: $" + str.tostring(close, "#.##") + "\n• Stop: $" + str.tostring(stopPx, "#.##") + "\n• Trim: $" + str.tostring(trimTarget, "#.##") + "\n• Target: $" + str.tostring(callTarget, "#.##") + "\n• ATR: " + str.tostring(atrV, "#.##") + " (" + atrState + ")" + "\n• Session: " + currentSession + " | " + currentDayOfWeek, alert.freq_once_per_bar)
+    alert("[CONFIRMED CALL] | $" + str.tostring(callStrike) + " | EXP " + expirationDate + " | Entry: $" + str.tostring(close, "#.##") + " | Target: $" + str.tostring(callTarget, "#.##"), alert.freq_once_per_bar_close)
 
 if putEntry
     inTrade           := true
-    side              := "PUT"
+    tradeSide         := "PUT"
     sideAtEntry       := "PUT"
-    entry             := close
-    stopPx            := close + atrMultiplier * atrV
+    entryPrice        := close
+    stopPrice         := close + atrMultiplier * atr
     positionSize      := 2
     addCount          := 0
     trimmed           := false
     runnerAlerted     := false
     earlyLockedCall   := false
     earlyLockedPut    := false
-    trimTarget        := entry - ((entry - putTarget) * trimPct / 100)
+    trimTarget        := entryPrice - ((entryPrice - putTarget) * trimPercent / 100)
     entryBar          := bar_index
     sessionEndAlerted := false
     
-    entryTimeSession    := currentSession
-    entryDayOfWeek      := currentDayOfWeek
-    entryAtrState       := atrState
-    entryVwapDist       := getVwapDistance(close, vwapV, atrV)
-    entryCandleStr      := getCandleStrength()
-    entryEmaStrength    := emaTrendStrength
-    entryEmaState       := emaAligned
-    entryAtrValue       := atrV
-    entryStopDist       := ((stopPx - close) / close) * 100
-    entryStopAtrMult    := atrMultiplier
-    highVolumeAtEntry   := highVolume
-    entryStrike         := putStrike
-    entryLevelDist      := getLevelDistance(close, putLevel, atrV)
+    entryVwapDist        := getVwapDistance(close, vwap, atr)
+    entryCandleStrength  := getCandleStrength()
+    entryEmaStrength     := emaTrendStrength
+    entryEmaState        := emaAligned
+    highVolumeAtEntry    := highVolume
     
     vwapLostDuringTrade    := false
     vwapReclaimedAfterLoss := false
@@ -381,26 +366,19 @@ if putEntry
     vwapLossCount          := 0
     wasAboveVwapPrevBar    := false
     wasBelowVwapPrevBar    := true
-    maxFavorable           := low
     mfePercent             := 0.0
-    maxAdverse             := high
-    maePercent             := entry > 0 ? math.max(0, ((high - entry) / entry) * 100) : 0.0
     
-    alert("📉 BUY PUT x2 | $" + str.tostring(putStrike) + " | EXP " + expDate + "\n• Entry: $" + str.tostring(close, "#.##") + "\n• Stop: $" + str.tostring(stopPx, "#.##") + "\n• Trim: $" + str.tostring(trimTarget, "#.##") + "\n• Target: $" + str.tostring(putTarget, "#.##") + "\n• ATR: " + str.tostring(atrV, "#.##") + " (" + atrState + ")" + "\n• Session: " + currentSession + " | " + currentDayOfWeek, alert.freq_once_per_bar)
+    alert("[CONFIRMED PUT] | $" + str.tostring(putStrike) + " | EXP " + expirationDate + " | Entry: $" + str.tostring(close, "#.##") + " | Target: $" + str.tostring(putTarget, "#.##"), alert.freq_once_per_bar_close)
 
 //====================== IN-TRADE CONDITION TRACKING ======================
 if inTrade
-    if side == "CALL"
-        maxFavorable := math.max(maxFavorable, high)
-        targetDist = callTarget - entry
+    if tradeSide == "CALL"
+        targetDist = callTarget - entryPrice
         if targetDist > 0
-            mfePercent := math.min(100, ((maxFavorable - entry) / targetDist) * 100)
+            maxFav = math.max(entryPrice, high)
+            mfePercent := math.min(100, ((maxFav - entryPrice) / targetDist) * 100)
         
-        maxAdverse := math.min(maxAdverse, low)
-        if entry > 0
-            maePercent := math.max(maePercent, ((entry - maxAdverse) / entry) * 100)
-        
-        currentlyAboveVwap = close > vwapV
+        currentlyAboveVwap = close > vwap
         if currentlyAboveVwap
             if vwapLostDuringTrade
                 vwapReclaimedAfterLoss := true
@@ -411,16 +389,12 @@ if inTrade
                 vwapLostDuringTrade := true
             wasAboveVwapPrevBar := false
     else
-        maxFavorable := math.min(maxFavorable, low)
-        targetDist = entry - putTarget
+        targetDist = entryPrice - putTarget
         if targetDist > 0
-            mfePercent := math.min(100, ((entry - maxFavorable) / targetDist) * 100)
+            minFav = math.min(entryPrice, low)
+            mfePercent := math.min(100, ((entryPrice - minFav) / targetDist) * 100)
         
-        maxAdverse := math.max(maxAdverse, high)
-        if entry > 0
-            maePercent := math.max(maePercent, ((maxAdverse - entry) / entry) * 100)
-        
-        currentlyBelowVwap = close < vwapV
+        currentlyBelowVwap = close < vwap
         if currentlyBelowVwap
             if vwapLostDuringTrade
                 vwapReclaimedAfterLoss := true
@@ -431,7 +405,7 @@ if inTrade
                 vwapLostDuringTrade := true
             wasBelowVwapPrevBar := false
     
-    currentEmaState = emaFastV > emaSlowV ? "Bull" : "Bear"
+    currentEmaState = emaFast > emaSlow ? "Bull" : "Bear"
     if currentEmaState != entryEmaState and not emaFlippedDuringTrade
         emaFlippedDuringTrade := true
 else
@@ -440,221 +414,127 @@ else
 
 //====================== ➕ SCALE-IN ======================
 if enableScaleIn and inTrade and addCount < maxAdds and bar_index != lastAddBar
-    if side == "CALL" and callReclaim and low > stopPx
+    if tradeSide == "CALL" and callReclaim and low > stopPrice
         addCount     += 1
         positionSize += 1
         lastAddBar   := bar_index
-        if stopPx < entry
-            stopPx := entry
-        alert("➕ ADD CALL #" + str.tostring(addCount) + " | Size: " + str.tostring(positionSize) + " | Stop → BE @ $" + str.tostring(stopPx, "#.##"), alert.freq_once_per_bar)
+        if stopPrice < entryPrice
+            stopPrice := entryPrice
+        alert("[ADD CALL]" + str.tostring(addCount) + " | Size: " + str.tostring(positionSize), alert.freq_once_per_bar_close)
     
-    if side == "PUT" and putReclaim and high < stopPx
+    if tradeSide == "PUT" and putReclaim and high < stopPrice
         addCount     += 1
         positionSize += 1
         lastAddBar   := bar_index
-        if stopPx > entry
-            stopPx := entry
-        alert("➕ ADD PUT #" + str.tostring(addCount) + " | Size: " + str.tostring(positionSize) + " | Stop → BE @ $" + str.tostring(stopPx, "#.##"), alert.freq_once_per_bar)
+        if stopPrice > entryPrice
+            stopPrice := entryPrice
+        alert("[ADD PUT]" + str.tostring(addCount) + " | Size: " + str.tostring(positionSize), alert.freq_once_per_bar_close)
 
 //====================== ✂️ TRIM ======================
 if inTrade and not trimmed
-    trimHit = (side == "CALL" and high >= trimTarget) or (side == "PUT" and low <= trimTarget)
+    trimHit = (tradeSide == "CALL" and high >= trimTarget) or (tradeSide == "PUT" and low <= trimTarget)
     if trimHit
         trimmed      := true
         positionSize -= 1
-        stopPx       := entry
-        alert("✂️ " + str.tostring(trimPct, "#") + "% TRIM | " + side + "\n• Trim @ $" + str.tostring(trimTarget, "#.##") + "\n• Remaining: " + str.tostring(positionSize) + "\n• Stop → BE @ $" + str.tostring(entry, "#.##"), alert.freq_once_per_bar)
+        stopPrice    := entryPrice
+        alert("[TRIM] " + str.tostring(trimPercent, "#") + "% TRIM | " + tradeSide + " | Remaining: " + str.tostring(positionSize), alert.freq_once_per_bar_close)
 
 //====================== 📈 TRAILING STOP ======================
-if enableTrailingStop and inTrade and trimmed and atrV > 0
+if enableTrailingStop and inTrade and trimmed and atr > 0
     progressPct = mfePercent
     
     if progressPct >= trailActivationPct
-        trailDistance = trailAtrMultiplier * atrV
+        trailDistance = trailAtrMultiplier * atr
         
-        if side == "CALL"
+        if tradeSide == "CALL"
             newTrailStop = high - trailDistance
-            if newTrailStop > stopPx
-                stopPx := newTrailStop
+            if newTrailStop > stopPrice
+                stopPrice := newTrailStop
         else
             newTrailStop = low + trailDistance
-            if newTrailStop < stopPx
-                stopPx := newTrailStop
+            if newTrailStop < stopPrice
+                stopPrice := newTrailStop
 
 //====================== 🏃 RUNNER ALERT ======================
 if inTrade and trimmed and not runnerAlerted
     runnerAlerted := true
-    targetPrice = side == "CALL" ? callTarget : putTarget
-    alert("🏃 RUNNER ACTIVE | " + side + " x" + str.tostring(positionSize) + "\n• Stop @ BE ($" + str.tostring(entry, "#.##") + ")" + "\n• Target: $" + str.tostring(targetPrice, "#.##"), alert.freq_once_per_bar)
+    targetPrice = tradeSide == "CALL" ? callTarget : putTarget
+    alert("[RUNNER] | " + tradeSide + " x" + str.tostring(positionSize) + " | Target: $" + str.tostring(targetPrice, "#.##"), alert.freq_once_per_bar_close)
 
 //====================== ⏰ SESSION END WARNING ======================
 if inTrade and isSessionEndWarning and not sessionEndAlerted and barstate.isconfirmed
     sessionEndAlerted := true
-    currentPnL = side == "CALL" ? ((close - entry) / entry) * 100 : ((entry - close) / entry) * 100
-    pnlStr = currentPnL >= 0 ? "+" + str.tostring(currentPnL, "#.##") : str.tostring(currentPnL, "#.##")
-    alert("⏰ SESSION ENDING | " + side + " x" + str.tostring(positionSize) + " still OPEN" + "\n• Entry: $" + str.tostring(entry, "#.##") + "\n• Current: $" + str.tostring(close, "#.##") + "\n• P&L: " + pnlStr + "%" + "\n• Consider manual exit!", alert.freq_once_per_bar)
-
-//====================== BUILD FINAL NOTES ======================
-buildExitNotes(exitType) =>
-    string notes = ""
-    
-    //notes := entryDayOfWeek
-    //notes := notes + "|" + entryTimeSession
-    //notes := notes + "|" + entryAtrState
-    //mfeNote = str.tostring(mfePercent, "#") + "%"
-    //notes := notes + "|" + mfeNote
-    //maeNote = str.tostring(maePercent, "#.#") + "%"
-    //notes := notes + "|" + maeNote
-    //notes := notes + "|A" + str.tostring(finalAddCount)
-    //notes := notes + "|" + (emaFlippedDuringTrade ? "EF" : "EH")
-
-    notes := entryVwapDist
-    notes := notes + "|" + entryVwapDist
-    notes := notes + "|" + entryCandleStr
-    notes := notes + "|" + entryEmaStrength
-    notes := notes + "|" + (highVolumeAtEntry ? "HV" : "LV")
-    vwapNote = vwapLostDuringTrade ? (vwapReclaimedAfterLoss ? "VRclm" : "VLost") : "VHeld"
-    notes := notes + "|" + vwapNote
-    exitNote = exitType == "Target" ? "TGT" : exitType == "EOD" ? "EOD" : (finalTrimmed ? "BE" : "STP")
-    notes := notes + "|" + exitNote
-    notes
-
-buildExtendedNotes() =>
-    string extNotes = ""
-    extNotes := "$" + str.tostring(entryStrike)
-    extNotes := extNotes + "|ATR:" + str.tostring(entryAtrValue, "#.##")
-    extNotes := extNotes + "|Stp:" + str.tostring(entryStopDist, "#.#") + "%"
-    extNotes := extNotes + "|Lvl:" + str.tostring(entryLevelDist, "#.#") + "x"
-    extNotes := extNotes + "|VL#:" + str.tostring(vwapLossCount)
-    extNotes := extNotes + "|Sz:" + str.tostring(finalPositionSize)
-    extNotes
+    alert("[SESSION ENDING] | " + tradeSide + " x" + str.tostring(positionSize) + " still OPEN" + " | Consider manual exit!", alert.freq_once_per_bar_close)
 
 //====================== EXIT ======================
-string exitReason = ""
-float  exitPrice  = na
-string finalNotes = ""
-string extendedNotes = ""
-float  tradePnLPct = 0.0
-
 // Target Exit
 if inTrade
-    targetHit = (side == "CALL" and high >= callTarget) or (side == "PUT" and low <= putTarget)
+    targetHit = (tradeSide == "CALL" and high >= callTarget) or (tradeSide == "PUT" and low <= putTarget)
     if targetHit
         exitReason := "Target"
-        exitPrice  := side == "CALL" ? callTarget : putTarget
+        exitPx     := tradeSide == "CALL" ? callTarget : putTarget
         mfePercent := 100.0
         
-        finalPositionSize := positionSize
-        finalAddCount     := addCount
-        finalTrimmed      := trimmed
+        finalTrimmed := trimmed
         
-        finalNotes := buildExitNotes("Target")
-        extendedNotes := buildExtendedNotes()
-        tradePnLPct := side == "CALL" ? ((exitPrice - entry) / entry) * 100 : ((entry - exitPrice) / entry) * 100
+        finalNotes := buildExitNotes("Target", entryVwapDist, entryCandleStrength, entryEmaStrength, highVolumeAtEntry, vwapLostDuringTrade, vwapReclaimedAfterLoss, finalTrimmed)
+        tradePnLPct := tradeSide == "CALL" ? ((exitPx - entryPrice) / entryPrice) * 100 : ((entryPrice - exitPx) / entryPrice) * 100
         inTrade    := false
         positionSize := 0
-        targetHitThisBar := true
         
-        totalWins    += 1
-        totalPnLPct  += tradePnLPct
-        dailyPnLPct  += tradePnLPct
+        dailyPnLPct += tradePnLPct
         
-        barsHeld = bar_index - entryBar
-        alert("🎯 TARGET HIT | " + sideAtEntry + "\n• Entry: $" + str.tostring(entry, "#.##") + "\n• Exit: $" + str.tostring(exitPrice, "#.##") + "\n• P&L: +" + str.tostring(tradePnLPct, "#.##") + "%" + "\n• Bars Held: " + str.tostring(barsHeld) + "\n• MAE: " + str.tostring(maePercent, "#.##") + "%" + "\n• Adds: " + str.tostring(finalAddCount), alert.freq_once_per_bar)
+        alert("[TARGET HIT] | " + sideAtEntry + " | Exit: $" + str.tostring(exitPx, "#.##"), alert.freq_once_per_bar_close)
 
 // Stop Exit
 if inTrade
-    stopHit = (side == "CALL" and low <= stopPx) or (side == "PUT" and high >= stopPx)
+    stopHit = (tradeSide == "CALL" and low <= stopPrice) or (tradeSide == "PUT" and high >= stopPrice)
     if stopHit
         exitReason := "Stop"
-        exitPrice  := stopPx
+        exitPx     := stopPrice
         
-        finalPositionSize := positionSize
-        finalAddCount     := addCount
-        finalTrimmed      := trimmed
+        finalTrimmed := trimmed
         
-        finalNotes := buildExitNotes("Stop")
-        extendedNotes := buildExtendedNotes()
-        tradePnLPct := side == "CALL" ? ((exitPrice - entry) / entry) * 100 : ((entry - exitPrice) / entry) * 100
+        finalNotes := buildExitNotes("Stop", entryVwapDist, entryCandleStrength, entryEmaStrength, highVolumeAtEntry, vwapLostDuringTrade, vwapReclaimedAfterLoss, finalTrimmed)
+        tradePnLPct := tradeSide == "CALL" ? ((exitPx - entryPrice) / entryPrice) * 100 : ((entryPrice - exitPx) / entryPrice) * 100
         inTrade    := false
         positionSize := 0
-        stopHitThisBar := true
         
-        if finalTrimmed
-            totalBE += 1
-        else
-            totalLosses += 1
-        totalPnLPct += tradePnLPct
         dailyPnLPct += tradePnLPct
         
         if enableDailyLimit and dailyPnLPct <= -maxDailyLossPct
             dailyLimitHit := true
-            alert("🚨 DAILY LOSS LIMIT HIT | Trading paused for today" +
-                  "\n• Daily P&L: " + str.tostring(dailyPnLPct, "#.##") + "%", alert.freq_once_per_bar)
+            alert("[DAILY LOSS LIMIT HIT] | Trading paused for today", alert.freq_once_per_bar_close)
         
         stopType = finalTrimmed ? "BE STOP" : "STOP LOSS"
-        pnlStr = tradePnLPct >= 0 ? "+" + str.tostring(tradePnLPct, "#.##") : str.tostring(tradePnLPct, "#.##")
-        barsHeld = bar_index - entryBar
-        alert("🛑 " + stopType + " | " + sideAtEntry + "\n• Entry: $" + str.tostring(entry, "#.##") + "\n• Exit: $" + str.tostring(exitPrice, "#.##") + "\n• P&L: " + pnlStr + "%" + "\n• Bars Held: " + str.tostring(barsHeld) + "\n• MFE: " + str.tostring(mfePercent, "#") + "% (peak before exit)" + "\n• MAE: " + str.tostring(maePercent, "#.##") + "%", alert.freq_once_per_bar)
+        alert("[STOP] " + stopType + " | " + sideAtEntry, alert.freq_once_per_bar_close)
 
 // EOD Auto-Exit
 if inTrade and enableEodExit and isSessionEnd
     exitReason := "EOD"
-    exitPrice  := close
+    exitPx     := close
     
-    finalPositionSize := positionSize
-    finalAddCount     := addCount
-    finalTrimmed      := trimmed
+    finalTrimmed := trimmed
     
-    finalNotes := buildExitNotes("EOD")
-    extendedNotes := buildExtendedNotes()
-    tradePnLPct := side == "CALL" ? ((exitPrice - entry) / entry) * 100 : ((entry - exitPrice) / entry) * 100
+    finalNotes := buildExitNotes("EOD", entryVwapDist, entryCandleStrength, entryEmaStrength, highVolumeAtEntry, vwapLostDuringTrade, vwapReclaimedAfterLoss, finalTrimmed)
+    tradePnLPct := tradeSide == "CALL" ? ((exitPx - entryPrice) / entryPrice) * 100 : ((entryPrice - exitPx) / entryPrice) * 100
     inTrade    := false
     positionSize := 0
-    eodExitThisBar := true
     
-    if tradePnLPct > 0
-        totalWins += 1
-    else if tradePnLPct < 0
-        totalLosses += 1
-    else
-        totalBE += 1
-    totalPnLPct += tradePnLPct
     dailyPnLPct += tradePnLPct
     
-    pnlStr = tradePnLPct >= 0 ? "+" + str.tostring(tradePnLPct, "#.##") : str.tostring(tradePnLPct, "#.##")
-    barsHeld = bar_index - entryBar
-    alert("🔔 EOD EXIT | " + sideAtEntry + "\n• Entry: $" + str.tostring(entry, "#.##") + "\n• Exit: $" + str.tostring(exitPrice, "#.##") + "\n• P&L: " + pnlStr + "%" + "\n• Bars Held: " + str.tostring(barsHeld) + "\n• MFE: " + str.tostring(mfePercent, "#") + "%" + "\n• MAE: " + str.tostring(maePercent, "#.##") + "%", alert.freq_once_per_bar)
+    alert("[EOD EXIT] | " + sideAtEntry, alert.freq_once_per_bar_close)
 
 //====================== DASHBOARD STORAGE ======================
-var string[] logSide     = array.new_string()
-var float[]  logEntry    = array.new_float()
-var float[]  logExit     = array.new_float()
-var string[] logResult   = array.new_string()
-var string[] logPnL      = array.new_string()
-var int[]    logBars     = array.new_int()
-var string[] logNotes    = array.new_string()
-var string[] logExtNotes = array.new_string()
-var float[]  logMFE      = array.new_float()
-var float[]  logMAE      = array.new_float()
-var int[]    logAdds     = array.new_int()
-
 if exitReason != ""
-    pnlPct = sideAtEntry == "CALL" ? ((exitPrice - entry) / entry) * 100 : ((entry - exitPrice) / entry) * 100
-    pnlStr = pnlPct >= 0 ? "+" + str.tostring(pnlPct, "#.##") + "%" : str.tostring(pnlPct, "#.##") + "%"
     barsHeld = bar_index - entryBar
     
     array.unshift(logSide, sideAtEntry)
-    array.unshift(logEntry, entry)
-    array.unshift(logExit, exitPrice)
+    array.unshift(logEntry, entryPrice)
+    array.unshift(logExit, exitPx)
     array.unshift(logResult, exitReason)
-    array.unshift(logPnL, pnlStr)
     array.unshift(logBars, barsHeld)
     array.unshift(logNotes, finalNotes)
-    array.unshift(logExtNotes, extendedNotes)
-    array.unshift(logMFE, mfePercent)
-    array.unshift(logMAE, maePercent)
-    array.unshift(logAdds, finalAddCount)
 
     maxLogSize = 10
     if array.size(logSide) > maxLogSize
@@ -662,201 +542,114 @@ if exitReason != ""
         array.pop(logEntry)
         array.pop(logExit)
         array.pop(logResult)
-        array.pop(logPnL)
         array.pop(logBars)
         array.pop(logNotes)
-        array.pop(logExtNotes)
-        array.pop(logMFE)
-        array.pop(logMAE)
-        array.pop(logAdds)
 
     lastExitBar := bar_index
-    side        := ""
-    entry       := na
-    earlyEntry  := na
+    tradeSide   := ""
+    entryPrice  := na
     trimTarget  := na
     entryBar    := na
 
 //====================== TRADE LOG DASHBOARD ======================
-var table dash = table.new(position.top_right, 8, 14, border_width=1)
-
 if barstate.islast
-    table.clear(dash, 0, 0, 7, 13)
+    table.clear(dash, 0, 0, 5, 8)
     
-    table.cell(dash, 0, 0, "Type",   bgcolor=bgHeader, text_color=txtHeader, text_size=size.small)
-    table.cell(dash, 1, 0, "Entry",  bgcolor=bgHeader, text_color=txtHeader, text_size=size.small)
-    table.cell(dash, 2, 0, "Exit",   bgcolor=bgHeader, text_color=txtHeader, text_size=size.small)
-    table.cell(dash, 3, 0, "P&L",    bgcolor=bgHeader, text_color=txtHeader, text_size=size.small)
-    table.cell(dash, 4, 0, "Best/Worst", bgcolor=bgHeader, text_color=txtHeader, text_size=size.small)
-    table.cell(dash, 5, 0, "Bars",   bgcolor=bgHeader, text_color=txtHeader, text_size=size.small)
-    table.cell(dash, 6, 0, "Result", bgcolor=bgHeader, text_color=txtHeader, text_size=size.small)
-    table.cell(dash, 7, 0, "Notes",  bgcolor=bgHeader, text_color=txtHeader, text_size=size.small)
+    table.cell(dash, 0, 0, "Type",   bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(dash, 1, 0, "Entry",  bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(dash, 2, 0, "Exit",   bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(dash, 3, 0, "Bars",   bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(dash, 4, 0, "Result", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(dash, 5, 0, "Notes",  bgcolor=headerBg, text_color=txtColor, text_size=size.small)
 
     maxDisplayRows = 8
     if array.size(logSide) > 0
         for r = 0 to math.min(array.size(logSide) - 1, maxDisplayRows - 1)
-            result = array.get(logResult, r)
-            rowColor = result == "Target" ? color.new(baseColor, 70) : result == "Stop"   ? color.new(baseColor, 80) : result == "EOD"    ? color.new(baseColor, 85) : color.new(baseColor, 90)
-            textCol = color.white
+            rowColor = r % 2 == 0 ? rowBg1 : rowBg2
             
             notesStr = array.size(logNotes) > r ? array.get(logNotes, r) : "—"
             
-            mfeVal = array.size(logMFE) > r ? array.get(logMFE, r) : 0.0
-            maeVal = array.size(logMAE) > r ? array.get(logMAE, r) : 0.0
-            mfeStr = str.tostring(mfeVal, "#") + "/" + str.tostring(maeVal, "#.#")
-            
-            table.cell(dash, 0, r + 1, array.get(logSide, r), bgcolor=rowColor, text_color=textCol, text_size=size.small)
-            table.cell(dash, 1, r + 1, str.tostring(array.get(logEntry, r), "#.##"), bgcolor=rowColor, text_color=textCol, text_size=size.small)
-            table.cell(dash, 2, r + 1, str.tostring(array.get(logExit, r), "#.##"), bgcolor=rowColor, text_color=textCol, text_size=size.small)
-            table.cell(dash, 3, r + 1, array.get(logPnL, r), bgcolor=rowColor, text_color=textCol, text_size=size.small)
-            table.cell(dash, 4, r + 1, mfeStr, bgcolor=rowColor, text_color=textCol, text_size=size.small)
-            table.cell(dash, 5, r + 1, str.tostring(array.get(logBars, r)), bgcolor=rowColor, text_color=textCol, text_size=size.small)
-            table.cell(dash, 6, r + 1, result, bgcolor=rowColor, text_color=textCol, text_size=size.small)
-            table.cell(dash, 7, r + 1, notesStr, bgcolor=rowColor, text_color=textCol, text_size=size.tiny)
-    
-    legendRow = math.min(array.size(logSide), maxDisplayRows) + 1
-    table.cell(dash, 0, legendRow, "Legend:", bgcolor=color.new(color.gray, 80), text_color=color.white, text_size=size.tiny)
-    table.cell(dash, 1, legendRow, "Day|Time|Vol|Dist|Cndl|Trend|HV|VWAP|MFE|MAE|Adds|EMA|Exit", bgcolor=color.new(color.gray, 80), text_color=color.yellow, text_size=size.tiny, text_halign=text.align_left)
-    table.merge_cells(dash, 1, legendRow, 7, legendRow)
-    
-    if showExtendedLog
-        extLegendRow = legendRow + 1
-        table.cell(dash, 0, extLegendRow, "Ext:", bgcolor=color.new(color.gray, 80), text_color=color.white, text_size=size.tiny)
-        table.cell(dash, 1, extLegendRow, "HV=HiVol|VHeld/Lost/Rclm|EH=EMAHeld|EF=EMAFlip|A#=Adds", bgcolor=color.new(color.gray, 80), text_color=color.orange, text_size=size.tiny, text_halign=text.align_left)
-        table.merge_cells(dash, 1, extLegendRow, 7, extLegendRow)
-    
-    statsRow = showExtendedLog ? legendRow + 2 : legendRow + 1
-    totalTrades = totalWins + totalLosses + totalBE
-    winRate = totalTrades > 0 ? (totalWins / totalTrades) * 100 : 0.0
-    winRateColor = color.new(baseColor, winRate >= 60 ? 55 : winRate >= 40 ? 65 : 75)
-    
-    table.cell(dash, 0, statsRow, "Stats:", bgcolor=color.new(#1E88E5, 10), text_color=color.white, text_size=size.tiny)
-    statsText = "W:" + str.tostring(totalWins) + " L:" + str.tostring(totalLosses) + " BE:" + str.tostring(totalBE) + " | WR:" + str.tostring(winRate, "#.#") + "%"
-    table.cell(dash, 1, statsRow, statsText, bgcolor=winRateColor, text_color=color.white, text_size=size.tiny, text_halign=text.align_left)
-    table.merge_cells(dash, 1, statsRow, 7, statsRow)
-    
-    avgRow = statsRow + 1
-    avgMFE = 0.0
-    avgMAE = 0.0
-    if array.size(logMFE) > 0
-        for i = 0 to array.size(logMFE) - 1
-            avgMFE += array.get(logMFE, i)
-            avgMAE += array.get(logMAE, i)
-        avgMFE := avgMFE / array.size(logMFE)
-        avgMAE := avgMAE / array.size(logMAE)
-    
-    avgText = "Avg MFE: " + str.tostring(avgMFE, "#.#") + "% | Avg MAE: " + str.tostring(avgMAE, "#.#") + "%"
-    table.cell(dash, 0, avgRow, "Avg:", bgcolor=color.new(#1E88E5, 10), text_color=color.white, text_size=size.tiny)
-    table.cell(dash, 1, avgRow, avgText, bgcolor=color.new(color.gray, 60), text_color=color.white, text_size=size.tiny, text_halign=text.align_left)
-    table.merge_cells(dash, 1, avgRow, 7, avgRow)
-    
-    pnlRow = avgRow + 1
-    dailyColor = dailyLimitHit ? color.new(baseColor, 50) : dailyPnLPct >= 0 ? color.new(baseColor, 65) : color.new(baseColor, 75)
-
-    dailyStr = dailyPnLPct >= 0 ? "+" + str.tostring(dailyPnLPct, "#.##") + "%" : str.tostring(dailyPnLPct, "#.##") + "%"
-    dailyText = "Daily: " + dailyStr + (dailyLimitHit ? " (LIMIT HIT)" : "") + " | Total: " + (totalPnLPct >= 0 ? "+" : "") + str.tostring(totalPnLPct, "#.##") + "%"
-    table.cell(dash, 0, pnlRow, "P&L:", bgcolor=color.new(#1E88E5, 10), text_color=color.white, text_size=size.tiny)
-    table.cell(dash, 1, pnlRow, dailyText, bgcolor=dailyColor, text_color=color.white, text_size=size.tiny, text_halign=text.align_left)
-    table.merge_cells(dash, 1, pnlRow, 7, pnlRow)
+            table.cell(dash, 0, r + 1, array.get(logSide, r), bgcolor=rowColor, text_color=txtColor, text_size=size.small)
+            table.cell(dash, 1, r + 1, str.tostring(array.get(logEntry, r), "#.##"), bgcolor=rowColor, text_color=txtColor, text_size=size.small)
+            table.cell(dash, 2, r + 1, str.tostring(array.get(logExit, r), "#.##"), bgcolor=rowColor, text_color=txtColor, text_size=size.small)
+            table.cell(dash, 3, r + 1, str.tostring(array.get(logBars, r)), bgcolor=rowColor, text_color=txtColor, text_size=size.small)
+            table.cell(dash, 4, r + 1, array.get(logResult, r), bgcolor=rowColor, text_color=txtColor, text_size=size.small)
+            table.cell(dash, 5, r + 1, notesStr, bgcolor=rowColor, text_color=txtColor, text_size=size.tiny)
 
 //====================== STATUS PANEL ======================
-var table statusPanel = table.new(position.bottom_right, 2, 10, border_width=1)
-
 if barstate.islast and showStatusPanel
     table.clear(statusPanel, 0, 0, 1, 9)
     
     statusText = dailyLimitHit ? "⛔ PAUSED" : inTrade ? "🔴 LIVE" : "⚪ IDLE"
-    statusColor = dailyLimitHit ? color.new(baseColor, 60) : inTrade ? color.new(baseColor, 60) : color.new(color.gray, 70)
-    table.cell(statusPanel, 0, 0, "Status", bgcolor=color.new(#1E88E5, 10), text_color=color.white, text_size=size.small)
-    table.cell(statusPanel, 1, 0, statusText + " | " + currentDayOfWeek, bgcolor=statusColor, text_color=color.white, text_size=size.small)
+    table.cell(statusPanel, 0, 0, "Status", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(statusPanel, 1, 0, statusText + " | " + currentDayOfWeek, bgcolor=rowBg1, text_color=txtColor, text_size=size.small)
     
-    trendColor = bullTrend ? color.new(baseColor, 60) : bearTrend ? color.new(baseColor, 60) : color.new(color.gray, 70)
-    table.cell(statusPanel, 0, 1, "Trend", bgcolor=color.new(color.gray, 70), text_color=color.white, text_size=size.small)
-    table.cell(statusPanel, 1, 1, trendLive + " (" + emaTrendStrength + ")", bgcolor=trendColor, text_color=color.white, text_size=size.small)
+    table.cell(statusPanel, 0, 1, "Trend", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(statusPanel, 1, 1, currentTrend + " (" + emaTrendStrength + ")", bgcolor=rowBg2, text_color=txtColor, text_size=size.small)
     
-    vwapStatus = close > vwapV ? "Above ↑" : close < vwapV ? "Below ↓" : "At →"
-    vwapColor = close > vwapV ? color.new(baseColor, 60) : close < vwapV ? color.new(baseColor, 60) : color.new(color.gray, 70)
-    table.cell(statusPanel, 0, 2, "VWAP", bgcolor=color.new(color.gray, 70), text_color=color.white, text_size=size.small)
-    table.cell(statusPanel, 1, 2, vwapStatus, bgcolor=vwapColor, text_color=color.white, text_size=size.small)
+    vwapStatus = close > vwap ? "Above ↑" : close < vwap ? "Below ↓" : "At →"
+    table.cell(statusPanel, 0, 2, "VWAP", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(statusPanel, 1, 2, vwapStatus, bgcolor=rowBg1, text_color=txtColor, text_size=size.small)
     
-    sessColor = currentSession == "AM" ? color.new(baseColor, 60) : currentSession == "PWR" ? color.new(#FF9800, 60) : currentSession == "MID" and skipMidSession ? color.new(baseColor, 60) : color.new(color.gray, 70)
     sessText = currentSession + (currentSession == "MID" and skipMidSession ? " ⛔" : "") + " | ATR:" + atrState + (atrState == "Lo" and skipLowVol ? " ⛔" : "")
-    table.cell(statusPanel, 0, 3, "Session", bgcolor=color.new(color.gray, 70), text_color=color.white, text_size=size.small)
-    table.cell(statusPanel, 1, 3, sessText, bgcolor=sessColor, text_color=color.white, text_size=size.small)
+    table.cell(statusPanel, 0, 3, "Session", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(statusPanel, 1, 3, sessText, bgcolor=rowBg2, text_color=txtColor, text_size=size.small)
     
-    volColor = highVolume ? color.new(baseColor, 60) : requireVolConf ? color.new(baseColor, 60) : color.new(color.gray, 70)
-    volText = highVolume ? "High ✓" : "Low" + (requireVolConf ? " ⛔" : "")
-    table.cell(statusPanel, 0, 4, "Volume", bgcolor=color.new(color.gray, 70), text_color=color.white, text_size=size.small)
-    table.cell(statusPanel, 1, 4, volText, bgcolor=volColor, text_color=color.white, text_size=size.small)
+    volText = highVolume ? "High ✓" : "Low" + (requireVolumeConfirm ? " ⛔" : "")
+    table.cell(statusPanel, 0, 4, "Volume", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(statusPanel, 1, 4, volText, bgcolor=rowBg1, text_color=txtColor, text_size=size.small)
     
     if inTrade
-        posColor = side == "CALL" ? color.new(baseColor, 60) : color.new(baseColor, 60)
         trailStatus = enableTrailingStop and trimmed and mfePercent >= trailActivationPct ? " 📈" : ""
-        table.cell(statusPanel, 0, 5, "Position", bgcolor=color.new(color.gray, 70), text_color=color.white, text_size=size.small)
-        table.cell(statusPanel, 1, 5, side + " x" + str.tostring(positionSize) + " (A" + str.tostring(addCount) + ")" + trailStatus, bgcolor=posColor, text_color=color.white, text_size=size.small)
+        table.cell(statusPanel, 0, 5, "Position", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+        table.cell(statusPanel, 1, 5, tradeSide + " x" + str.tostring(positionSize) + " (A" + str.tostring(addCount) + ")" + trailStatus, bgcolor=rowBg2, text_color=txtColor, text_size=size.small)
         
-        currentPnL = side == "CALL" ? ((close - entry) / entry) * 100 : ((entry - close) / entry) * 100
-        pnlColor = currentPnL >= 0 ? color.new(baseColor, 60) : color.new(baseColor, 60)
+        currentPnL = tradeSide == "CALL" ? ((close - entryPrice) / entryPrice) * 100 : ((entryPrice - close) / entryPrice) * 100
         pnlStr = currentPnL >= 0 ? "+" + str.tostring(currentPnL, "#.##") + "%" : str.tostring(currentPnL, "#.##") + "%"
-        table.cell(statusPanel, 0, 6, "P&L", bgcolor=color.new(color.gray, 70), text_color=color.white, text_size=size.small)
-        table.cell(statusPanel, 1, 6, pnlStr, bgcolor=pnlColor, text_color=color.white, text_size=size.small)
+        table.cell(statusPanel, 0, 6, "P&L", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+        table.cell(statusPanel, 1, 6, pnlStr, bgcolor=rowBg1, text_color=txtColor, text_size=size.small)
         
-        riskPct = entry > 0 ? math.abs(close - stopPx) / entry * 100 : 0.0
-        riskColor = riskPct < 0.5 ? color.new(baseColor, 60) : riskPct < 1.0 ? color.new(baseColor, 60) : color.new(baseColor, 60)
+        riskPct = entryPrice > 0 ? math.abs(close - stopPrice) / entryPrice * 100 : 0.0
         riskText = str.tostring(riskPct, "#.##") + "% to stop"
-        table.cell(statusPanel, 0, 7, "Risk", bgcolor=color.new(color.gray, 70), text_color=color.white, text_size=size.small)
-        table.cell(statusPanel, 1, 7, riskText, bgcolor=riskColor, text_color=color.white, text_size=size.small)
+        table.cell(statusPanel, 0, 7, "Risk", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+        table.cell(statusPanel, 1, 7, riskText, bgcolor=rowBg2, text_color=txtColor, text_size=size.small)
         
-        mfeColor = mfePercent >= 75 ? color.new(baseColor, 60) : mfePercent >= 50 ? color.new(baseColor, 60) : color.new(color.gray, 70)
-        mfeText = "MFE:" + str.tostring(mfePercent, "#") + "% MAE:" + str.tostring(maePercent, "#.#") + "%"
-        table.cell(statusPanel, 0, 8, "Excursion", bgcolor=color.new(color.gray, 70), text_color=color.white, text_size=size.small)
-        table.cell(statusPanel, 1, 8, mfeText, bgcolor=mfeColor, text_color=color.white, text_size=size.small)
+        mfeText = "MFE:" + str.tostring(mfePercent, "#") + "%"
+        table.cell(statusPanel, 0, 8, "Progress", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+        table.cell(statusPanel, 1, 8, mfeText, bgcolor=rowBg1, text_color=txtColor, text_size=size.small)
         
         vwapTradeStatus = vwapLostDuringTrade ? (vwapReclaimedAfterLoss ? "VRclm" : "VLost") : "VHeld"
         emaTradeStatus = emaFlippedDuringTrade ? "EF" : "EH"
-        tradeCondColor = vwapLostDuringTrade and not vwapReclaimedAfterLoss ? color.new(baseColor, 60) : color.new(baseColor, 60)
-        table.cell(statusPanel, 0, 9, "Conditions", bgcolor=color.new(color.gray, 70), text_color=color.white, text_size=size.small)
-        table.cell(statusPanel, 1, 9, vwapTradeStatus + " | " + emaTradeStatus + " | VL#:" + str.tostring(vwapLossCount), bgcolor=tradeCondColor, text_color=color.white, text_size=size.small)
+        table.cell(statusPanel, 0, 9, "Conditions", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+        table.cell(statusPanel, 1, 9, vwapTradeStatus + " | " + emaTradeStatus + " | VL#:" + str.tostring(vwapLossCount), bgcolor=rowBg2, text_color=txtColor, text_size=size.small)
     else
-        callHoldColor = callHold >= holdBars ? color.new(baseColor, 60) : color.new(color.gray, 70)
-        table.cell(statusPanel, 0, 5, "CALL Hold", bgcolor=color.new(color.gray, 70), text_color=color.white, text_size=size.small)
-        table.cell(statusPanel, 1, 5, str.tostring(callHold) + "/" + str.tostring(holdBars), bgcolor=callHoldColor, text_color=color.white, text_size=size.small)
+        table.cell(statusPanel, 0, 5, "CALL Hold", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+        table.cell(statusPanel, 1, 5, str.tostring(callHold) + "/" + str.tostring(holdBars), bgcolor=rowBg2, text_color=txtColor, text_size=size.small)
         
-        putHoldColor = putHold >= holdBars ? color.new(baseColor, 60) : color.new(color.gray, 70)
-        table.cell(statusPanel, 0, 6, "PUT Hold", bgcolor=color.new(color.gray, 70), text_color=color.white, text_size=size.small)
-        table.cell(statusPanel, 1, 6, str.tostring(putHold) + "/" + str.tostring(holdBars), bgcolor=putHoldColor, text_color=color.white, text_size=size.small)
+        table.cell(statusPanel, 0, 6, "PUT Hold", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+        table.cell(statusPanel, 1, 6, str.tostring(putHold) + "/" + str.tostring(holdBars), bgcolor=rowBg1, text_color=txtColor, text_size=size.small)
         
         if not na(lastExitBar)
             cooldownLeft = math.max(0, acceptCooldownBars - (bar_index - lastExitBar))
-            cooldownColor = cooldownLeft > 0 ? color.new(baseColor, 60) : color.new(baseColor, 60)
             cooldownText = cooldownLeft > 0 ? str.tostring(cooldownLeft) + " bars" : "Ready"
-            table.cell(statusPanel, 0, 7, "Cooldown", bgcolor=color.new(color.gray, 70), text_color=color.white, text_size=size.small)
-            table.cell(statusPanel, 1, 7, cooldownText, bgcolor=cooldownColor, text_color=color.white, text_size=size.small)
+            table.cell(statusPanel, 0, 7, "Cooldown", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+            table.cell(statusPanel, 1, 7, cooldownText, bgcolor=rowBg2, text_color=txtColor, text_size=size.small)
         else
-            table.cell(statusPanel, 0, 7, "Cooldown", bgcolor=color.new(color.gray, 70), text_color=color.white, text_size=size.small)
-            table.cell(statusPanel, 1, 7, "Ready", bgcolor=color.new(baseColor, 60), text_color=color.white, text_size=size.small)
+            table.cell(statusPanel, 0, 7, "Cooldown", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+            table.cell(statusPanel, 1, 7, "Ready", bgcolor=rowBg2, text_color=txtColor, text_size=size.small)
         
-        filterCount = (skipMidSession ? 1 : 0) + (skipLowVol ? 1 : 0) + (requireVolConf ? 1 : 0) + (enableDailyLimit ? 1 : 0)
-        filterText = filterCount > 0 ? str.tostring(filterCount) + " active" : "None"
-        filterColor = filtersPass ? color.new(baseColor, 60) : color.new(baseColor, 60)
-        table.cell(statusPanel, 0, 8, "Filters", bgcolor=color.new(color.gray, 70), text_color=color.white, text_size=size.small)
-        table.cell(statusPanel, 1, 8, filterText + (filtersPass ? " ✓" : " ⛔"), bgcolor=filterColor, text_color=color.white, text_size=size.small)
-        
-        table.cell(statusPanel, 0, 9, "ATR", bgcolor=color.new(color.gray, 70), text_color=color.white, text_size=size.small)
-        table.cell(statusPanel, 1, 9, str.tostring(atrV, "#.##") + " (" + atrState + ")", bgcolor=color.new(color.gray, 70), text_color=color.white, text_size=size.small)
+        table.cell(statusPanel, 0, 8, "ATR", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+        table.cell(statusPanel, 1, 8, str.tostring(atr, "#.##") + " (" + atrState + ")", bgcolor=rowBg1, text_color=txtColor, text_size=size.small)
 
 //====================== PLOTS ======================
-plot(vwapV, "VWAP", color=color.new(#2196F3, 20), linewidth=2)
+plot(vwap, "VWAP", color=color.new(#2196F3, 20), linewidth=2)
 
-plot(inTrade ? stopPx : na, "Stop", color=color.new(#FF5722, 0), linewidth=2, style=plot.style_linebr)
-plot(inTrade ? entry : na, "Entry", color=color.new(color.white, 30), linewidth=1, style=plot.style_linebr)
-plot(inTrade and not trimmed ? trimTarget : na, "Trim Target", color=color.new(baseColor, 0), linewidth=1, style=plot.style_cross)
+plot(inTrade ? stopPrice : na, "Stop", color=color.new(#FF5722, 0), linewidth=2, style=plot.style_linebr)
+plot(inTrade ? entryPrice : na, "Entry", color=color.new(color.white, 30), linewidth=1, style=plot.style_linebr)
+plot(inTrade and not trimmed ? trimTarget : na, "Trim Target", color=color.new(#0f3460, 0), linewidth=1, style=plot.style_cross)
 
-plot(side == "CALL" and inTrade ? callLevel : na, "CALL Resistance", color=color.new(baseColor, 30), linewidth=2, style=plot.style_linebr)
-plot(side == "PUT" and inTrade ? putLevel : na, "PUT Support", color=color.new(baseColor, 30), linewidth=2, style=plot.style_linebr)
+plot(tradeSide == "CALL" and inTrade ? callLevel : na, "CALL Resistance", color=color.new(#0f3460, 30), linewidth=2, style=plot.style_linebr)
+plot(tradeSide == "PUT" and inTrade ? putLevel : na, "PUT Support", color=color.new(#0f3460, 30), linewidth=2, style=plot.style_linebr)
 
-plot(side == "CALL" and inTrade ? callTarget : na, "CALL Target", color=color.new(#00E676, 0), linewidth=2, style=plot.style_circles)
-plot(side == "PUT" and inTrade ? putTarget : na, "PUT Target", color=color.new(#FF1744, 0), linewidth=2, style=plot.style_circles)
-
-plot(inTrade ? maxAdverse : na, "Max Adverse", color=color.new(#FF9800, 50), linewidth=1, style=plot.style_cross)
-plot(inTrade ? maxFavorable : na, "Max Favorable", color=color.new(#00BCD4, 50), linewidth=1, style=plot.style_cross)
+plot(tradeSide == "CALL" and inTrade ? callTarget : na, "CALL Target", color=color.new(#00E676, 0), linewidth=2, style=plot.style_circles)
+plot(tradeSide == "PUT" and inTrade ? putTarget : na, "PUT Target", color=color.new(#FF1744, 0), linewidth=2, style=plot.style_circles)
