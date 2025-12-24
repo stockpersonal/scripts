@@ -1,0 +1,430 @@
+//@version=5
+indicator("Option Day Trades", overlay=true, max_labels_count=500)
+
+//====================== INPUTS ======================
+calcTF           = input.timeframe("5", "Calculation Timeframe (Trend/Structure)")
+preAlertTF       = input.timeframe("3", "Pre-Alert Timeframe (Momentum)")
+alertTF          = input.timeframe("1", "Alert Timeframe (Execution)")
+fastEmaLen       = input.int(9, "Fast EMA")
+midEmaLen        = input.int(21, "Mid EMA")
+slowEmaLen       = input.int(50, "Slow EMA")
+useVWAP          = input.bool(true, "Require VWAP Hold")
+targetRR         = input.float(2.0, "Target R Multiple")
+pullbackLength   = input.int(5, "Pullback Lookback")
+strikeStep       = input.float(5.0, "Strike Increment", step=0.5)
+minDailyVolume   = input.int(500000, "Min Daily Stock Volume for Alerts")
+profitPercent    = input.float(20.0, "Profit Alert %", step=1.0)
+runnerPercent    = input.float(50.0, "Runner Alert %", step=1.0)
+forceExitHour    = input.int(15, "Force exit hour (ET)")
+forceExitMinute  = input.int(55, "Force exit minute (ET)")
+
+// Display Settings
+showDashboard       = input.bool(true, "Show Dashboard", group="Display Settings")
+dashboardPosition   = input.string("Top Right", "Dashboard Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group="Display Settings")
+showStatusPanel     = input.bool(true, "Show Status Panel", group="Display Settings")
+statusPanelPosition = input.string("Bottom Right", "Status Panel Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group="Display Settings")
+
+//====================== CONSTANTS & COLORS ======================
+headerBg = color.new(#1a1a2e, 0)
+rowBg1   = color.new(#16213e, 0)
+rowBg2   = color.new(#0f3460, 0)
+txtColor = color.white
+
+//====================== HELPER FUNCTIONS ======================
+getPosition(pos) =>
+    pos == "Top Left" ? position.top_left : pos == "Top Right" ? position.top_right : pos == "Bottom Left" ? position.bottom_left : position.bottom_right
+
+getDayOfWeek() =>
+    dow = dayofweek
+    dow == dayofweek.monday ? "Mon" : dow == dayofweek.tuesday ? "Tue" : dow == dayofweek.wednesday ? "Wed" : dow == dayofweek.thursday ? "Thu" : dow == dayofweek.friday ? "Fri" : "Wknd"
+
+dashPos   = getPosition(dashboardPosition)
+statusPos = getPosition(statusPanelPosition)
+
+//====================== TICKER ======================
+tickerSymbol = syminfo.ticker
+
+//====================== SESSION ======================
+sessionStart  = timestamp("America/New_York", year, month, dayofmonth, 9, 30)
+sessionEnd    = timestamp("America/New_York", year, month, dayofmonth, 16, 0)
+forceExitTime = timestamp("America/New_York", year, month, dayofmonth, forceExitHour, forceExitMinute)
+inSession     = time >= sessionStart and time <= sessionEnd
+isNewDay      = ta.change(time("D")) != 0
+
+//====================== MULTI-TIMEFRAME DATA ======================
+// Calculation TF (5-min) - Trend, Structure, Indicators
+[closeCalc, openCalc, highCalc, lowCalc, emaFast, emaMid, emaSlow, vwapVal, supportLevel, resistanceLevel, higherLow, lowerHigh] = request.security(tickerSymbol, calcTF, [close, open, high, low, ta.ema(close, fastEmaLen), ta.ema(close, midEmaLen), ta.ema(close, slowEmaLen), ta.vwap(hlc3), ta.lowest(low, pullbackLength), ta.highest(high, pullbackLength), low > low[1], high < high[1]])
+
+// Pre-Alert TF (3-min) - Momentum confirmation
+closePre = request.security(tickerSymbol, preAlertTF, close)
+
+// Alert TF (1-min) - Execution
+[closeAlert, highAlert, lowAlert] = request.security(tickerSymbol, alertTF, [close, high, low])
+
+// Daily volume
+dailyVolume    = request.security(tickerSymbol, "D", volume)
+dailyVolumeSma = request.security(tickerSymbol, "D", ta.sma(volume, 20))
+
+//====================== STATE VARIABLES ======================
+// Trade state
+var float callEntryPrice     = na
+var float putEntryPrice      = na
+var float callStopLevel      = na
+var float putStopLevel       = na
+var float callTargetLevel    = na
+var float putTargetLevel     = na
+
+// Alert state - prevent duplicate alerts
+var bool  callAddonFired      = false
+var bool  putAddonFired       = false
+var bool  callProfitFired     = false
+var bool  putProfitFired      = false
+var bool  callRunnerFired     = false
+var bool  putRunnerFired      = false
+var bool  callStopFired       = false
+var bool  putStopFired        = false
+var bool  callTargetFired     = false
+var bool  putTargetFired      = false
+var bool  callForceExitFired  = false
+var bool  putForceExitFired   = false
+
+// Dashboard row counter
+var int row = 1
+
+//====================== DAILY RESET ======================
+if isNewDay
+    callEntryPrice     := na
+    putEntryPrice      := na
+    callStopLevel      := na
+    putStopLevel       := na
+    callTargetLevel    := na
+    putTargetLevel     := na
+    callAddonFired     := false
+    putAddonFired      := false
+    callProfitFired    := false
+    putProfitFired     := false
+    callRunnerFired    := false
+    putRunnerFired     := false
+    callStopFired      := false
+    putStopFired       := false
+    callTargetFired    := false
+    putTargetFired     := false
+    callForceExitFired := false
+    putForceExitFired  := false
+    row := 1
+
+//====================== TREND & STRUCTURE (Calc TF) ======================
+bullTrend = emaFast > emaMid and emaMid > emaSlow and closeCalc > emaFast and closeCalc > emaMid
+bearTrend = emaFast < emaMid and emaMid < emaSlow and closeCalc < emaFast and closeCalc < emaMid
+
+vwapBull = not useVWAP or closeCalc > vwapVal
+vwapBear = not useVWAP or closeCalc < vwapVal
+
+bullMomentum = closeCalc > openCalc and (closeCalc - openCalc) > (highCalc - lowCalc) * 0.5
+bearMomentum = openCalc > closeCalc and (openCalc - closeCalc) > (highCalc - lowCalc) * 0.5
+
+//====================== LIQUIDITY CHECK ======================
+relativeVolume = dailyVolumeSma > 0 ? dailyVolume / dailyVolumeSma : 0
+liquidityOK = dailyVolume >= minDailyVolume and relativeVolume >= 1
+
+//====================== SIGNAL CONDITIONS ======================
+callValid = bullTrend and vwapBull and closeCalc > supportLevel and higherLow and bullMomentum
+putValid  = bearTrend and vwapBear and closeCalc < resistanceLevel and lowerHigh and bearMomentum
+
+callSignal = callValid and liquidityOK and inSession
+putSignal  = putValid and liquidityOK and inSession
+
+//====================== PRE-ALERT LOGIC (Pre-Alert TF) ======================
+callPreAlert = bullTrend and closePre > supportLevel and liquidityOK
+putPreAlert  = bearTrend and closePre < resistanceLevel and liquidityOK
+
+if inSession
+    if callPreAlert and na(callEntryPrice)
+        alert("⚠️ PRE-ALERT: " + tickerSymbol + " CALL setup forming", alert.freq_once_per_bar_close)
+    if putPreAlert and na(putEntryPrice)
+        alert("⚠️ PRE-ALERT: " + tickerSymbol + " PUT setup forming", alert.freq_once_per_bar_close)
+
+//====================== STRIKE & EXPIRY ======================
+atmStrike  = math.round(closeAlert / strikeStep) * strikeStep
+callStrike = atmStrike
+putStrike  = atmStrike
+
+isWed = dayofweek == dayofweek.wednesday
+isThu = dayofweek == dayofweek.thursday
+isFri = dayofweek == dayofweek.friday
+hourET = hour(time, "America/New_York")
+useNextWeek = isThu or isFri or (isWed and hourET >= 12)
+expiryText = useNextWeek ? "NEXT WEEK EXPIRY ONLY" : "CURRENT WEEK OK"
+strongTrend = bullTrend or bearTrend
+allowOvernight = strongTrend
+tradeTypeText = allowOvernight ? "OVERNIGHT-ELIGIBLE" : "INTRADAY ONLY"
+
+//====================== ENTRY LOGIC ======================
+// CALL Entry - only if not already in a CALL trade
+if callSignal and na(callEntryPrice)
+    callEntryPrice  := closeAlert
+    callStopLevel   := supportLevel
+    callTargetLevel := closeAlert + ((closeAlert - supportLevel) * targetRR)
+    
+    // Reset alert flags for new trade
+    callProfitFired := false
+    callRunnerFired := false
+    callStopFired   := false
+    callTargetFired := false
+    callAddonFired  := false
+    
+    alert("🟢 CALL ENTRY: " + tickerSymbol + "\nPrice: " + str.tostring(closeAlert, "#.##") + "\nStrike: " + str.tostring(callStrike) + "\nStop: " + str.tostring(callStopLevel, "#.##") + "\nTarget: " + str.tostring(callTargetLevel, "#.##") + "\n" + expiryText, alert.freq_once_per_bar_close)
+
+// PUT Entry - only if not already in a PUT trade
+if putSignal and na(putEntryPrice)
+    putEntryPrice  := closeAlert
+    putStopLevel   := resistanceLevel
+    putTargetLevel := closeAlert - ((resistanceLevel - closeAlert) * targetRR)
+    
+    // Reset alert flags for new trade
+    putProfitFired := false
+    putRunnerFired := false
+    putStopFired   := false
+    putTargetFired := false
+    putAddonFired  := false
+    
+    alert("🔴 PUT ENTRY: " + tickerSymbol + "\nPrice: " + str.tostring(closeAlert, "#.##") + "\nStrike: " + str.tostring(putStrike) + "\nStop: " + str.tostring(putStopLevel, "#.##") + "\nTarget: " + str.tostring(putTargetLevel, "#.##") + "\n" + expiryText, alert.freq_once_per_bar_close)
+
+//====================== IN-TRADE ALERTS ======================
+// CALL Trade Management
+if not na(callEntryPrice) and inSession
+    // Stop Loss
+    if closeAlert <= callStopLevel and not callStopFired
+        alert("🛑 STOP LOSS: " + tickerSymbol + " CALL\nEntry: " + str.tostring(callEntryPrice, "#.##") + "\nExit: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+        callStopFired := true
+    
+    // Target Hit
+    if closeAlert >= callTargetLevel and not callTargetFired
+        alert("✅ TARGET HIT: " + tickerSymbol + " CALL\nEntry: " + str.tostring(callEntryPrice, "#.##") + "\nExit: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+        callTargetFired := true
+    
+    // Profit Alert
+    if closeAlert >= callEntryPrice * (1 + profitPercent / 100) and not callProfitFired
+        alert("💰 CALL +" + str.tostring(profitPercent, "#") + "% PROFIT: " + tickerSymbol + "\nPrice: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+        callProfitFired := true
+    
+    // Runner Alert
+    if closeAlert >= callEntryPrice * (1 + runnerPercent / 100) and not callRunnerFired
+        alert("🏃 CALL RUNNER +" + str.tostring(runnerPercent, "#") + "%: " + tickerSymbol + "\nPrice: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+        callRunnerFired := true
+
+// PUT Trade Management
+if not na(putEntryPrice) and inSession
+    // Stop Loss
+    if closeAlert >= putStopLevel and not putStopFired
+        alert("🛑 STOP LOSS: " + tickerSymbol + " PUT\nEntry: " + str.tostring(putEntryPrice, "#.##") + "\nExit: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+        putStopFired := true
+    
+    // Target Hit
+    if closeAlert <= putTargetLevel and not putTargetFired
+        alert("✅ TARGET HIT: " + tickerSymbol + " PUT\nEntry: " + str.tostring(putEntryPrice, "#.##") + "\nExit: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+        putTargetFired := true
+    
+    // Profit Alert
+    if closeAlert <= putEntryPrice * (1 - profitPercent / 100) and not putProfitFired
+        alert("💰 PUT +" + str.tostring(profitPercent, "#") + "% PROFIT: " + tickerSymbol + "\nPrice: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+        putProfitFired := true
+    
+    // Runner Alert
+    if closeAlert <= putEntryPrice * (1 - runnerPercent / 100) and not putRunnerFired
+        alert("🏃 PUT RUNNER +" + str.tostring(runnerPercent, "#") + "%: " + tickerSymbol + "\nPrice: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+        putRunnerFired := true
+
+//====================== ADDON ALERTS ======================
+callAddon = not na(callEntryPrice) and callValid and closeAlert > callStopLevel and closeAlert > callEntryPrice and not callAddonFired
+putAddon  = not na(putEntryPrice) and putValid and closeAlert < putStopLevel and closeAlert < putEntryPrice and not putAddonFired
+
+if callAddon and inSession
+    alert("➕ CALL ADDON: " + tickerSymbol + "\nPrice: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+    callAddonFired := true
+
+if putAddon and inSession
+    alert("➕ PUT ADDON: " + tickerSymbol + "\nPrice: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+    putAddonFired := true
+
+//====================== TRADE EXIT DETECTION ======================
+callClosed = not na(callEntryPrice) and (callStopFired or callTargetFired or time >= forceExitTime)
+putClosed  = not na(putEntryPrice) and (putStopFired or putTargetFired or time >= forceExitTime)
+
+// Force exit alert
+if not na(callEntryPrice) and time >= forceExitTime and not callStopFired and not callTargetFired and not callForceExitFired
+    alert("⏰ FORCE EXIT: " + tickerSymbol + " CALL\nPrice: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+    callForceExitFired := true
+
+if not na(putEntryPrice) and time >= forceExitTime and not putStopFired and not putTargetFired and not putForceExitFired
+    alert("⏰ FORCE EXIT: " + tickerSymbol + " PUT\nPrice: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+    putForceExitFired := true
+
+//====================== TABLES ======================
+var table tradeLog    = table.new(dashPos, 6, 20, border_width=1)
+var table statusPanel = table.new(statusPos, 2, 10, border_width=1)
+
+// Header on new day
+if isNewDay and showDashboard
+    table.clear(tradeLog, 0, 0, 5, 19)
+    table.cell(tradeLog, 0, 0, "ENTRY", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(tradeLog, 1, 0, "EXIT", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(tradeLog, 2, 0, "TYPE", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(tradeLog, 3, 0, "STRIKE", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(tradeLog, 4, 0, "OUTCOME", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(tradeLog, 5, 0, "TIME", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+
+// Log completed CALL trade
+if callClosed
+    if row < 20 and showDashboard
+        outcome = callTargetFired ? "TARGET" : callStopFired ? "STOP" : "FORCE EXIT"
+        rowColor = row % 2 == 0 ? rowBg1 : rowBg2
+        
+        table.cell(tradeLog, 0, row, str.tostring(callEntryPrice, "#.##"), bgcolor=rowColor, text_color=txtColor, text_size=size.small)
+        table.cell(tradeLog, 1, row, str.tostring(closeAlert, "#.##"), bgcolor=rowColor, text_color=txtColor, text_size=size.small)
+        table.cell(tradeLog, 2, row, "CALL", bgcolor=rowColor, text_color=txtColor, text_size=size.small)
+        table.cell(tradeLog, 3, row, str.tostring(callStrike), bgcolor=rowColor, text_color=txtColor, text_size=size.small)
+        table.cell(tradeLog, 4, row, outcome, bgcolor=rowColor, text_color=txtColor, text_size=size.small)
+        table.cell(tradeLog, 5, row, str.format_time(time, "HH:mm", "America/New_York"), bgcolor=rowColor, text_color=txtColor, text_size=size.small)
+        row += 1
+    
+    // Reset CALL trade state (always, regardless of dashboard)
+    callEntryPrice  := na
+    callStopLevel   := na
+    callTargetLevel := na
+
+// Log completed PUT trade
+if putClosed
+    if row < 20 and showDashboard
+        outcome = putTargetFired ? "TARGET" : putStopFired ? "STOP" : "FORCE EXIT"
+        rowColor = row % 2 == 0 ? rowBg1 : rowBg2
+        
+        table.cell(tradeLog, 0, row, str.tostring(putEntryPrice, "#.##"), bgcolor=rowColor, text_color=txtColor, text_size=size.small)
+        table.cell(tradeLog, 1, row, str.tostring(closeAlert, "#.##"), bgcolor=rowColor, text_color=txtColor, text_size=size.small)
+        table.cell(tradeLog, 2, row, "PUT", bgcolor=rowColor, text_color=txtColor, text_size=size.small)
+        table.cell(tradeLog, 3, row, str.tostring(putStrike), bgcolor=rowColor, text_color=txtColor, text_size=size.small)
+        table.cell(tradeLog, 4, row, outcome, bgcolor=rowColor, text_color=txtColor, text_size=size.small)
+        table.cell(tradeLog, 5, row, str.format_time(time, "HH:mm", "America/New_York"), bgcolor=rowColor, text_color=txtColor, text_size=size.small)
+        row += 1
+    
+    // Reset PUT trade state (always, regardless of dashboard)
+    putEntryPrice  := na
+    putStopLevel   := na
+    putTargetLevel := na
+
+//====================== STATUS PANEL ======================
+// Calculate additional metrics for status panel
+emaSpread = emaFast - emaSlow
+emaTrendStrength = math.abs(emaSpread) > (highCalc - lowCalc) * 1.5 ? "Strong" : math.abs(emaSpread) > (highCalc - lowCalc) * 0.5 ? "Mod" : "Weak"
+trendText = bullTrend ? "Bull" : bearTrend ? "Bear" : "Neutral"
+vwapStatus = closeCalc > vwapVal ? "Above ↑" : closeCalc < vwapVal ? "Below ↓" : "At →"
+volStatus = liquidityOK ? (relativeVolume >= 1.5 ? "High ✓" : "OK ✓") : "Low ⛔"
+
+// Session info
+minutesToClose = math.round((sessionEnd - time) / 60000)
+sessionText = minutesToClose > 0 and minutesToClose <= 390 ? str.tostring(minutesToClose) + " min left" : "Closed"
+
+currentDayOfWeek = getDayOfWeek()
+
+if barstate.islast and showStatusPanel
+    table.clear(statusPanel, 0, 0, 1, 9)
+    
+    // Row 0: Status
+    inCallTrade = not na(callEntryPrice)
+    inPutTrade = not na(putEntryPrice)
+    statusText = inCallTrade ? "🟢 CALL LIVE" : inPutTrade ? "🔴 PUT LIVE" : inSession ? "⚪ IDLE" : "⏸️ CLOSED"
+    table.cell(statusPanel, 0, 0, "Status", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(statusPanel, 1, 0, statusText + " | " + currentDayOfWeek, bgcolor=rowBg1, text_color=txtColor, text_size=size.small)
+    
+    // Row 1: Trend
+    table.cell(statusPanel, 0, 1, "Trend", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(statusPanel, 1, 1, trendText + " (" + emaTrendStrength + ")", bgcolor=rowBg2, text_color=txtColor, text_size=size.small)
+    
+    // Row 2: VWAP
+    table.cell(statusPanel, 0, 2, "VWAP", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(statusPanel, 1, 2, vwapStatus, bgcolor=rowBg1, text_color=txtColor, text_size=size.small)
+    
+    // Row 3: Volume
+    table.cell(statusPanel, 0, 3, "Volume", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(statusPanel, 1, 3, volStatus + " | RVOL:" + str.tostring(relativeVolume, "#.##"), bgcolor=rowBg2, text_color=txtColor, text_size=size.small)
+    
+    // Row 4: Session
+    table.cell(statusPanel, 0, 4, "Session", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+    table.cell(statusPanel, 1, 4, sessionText, bgcolor=rowBg1, text_color=txtColor, text_size=size.small)
+    
+    if inCallTrade or inPutTrade
+        // In-trade display
+        currentEntry = inCallTrade ? callEntryPrice : putEntryPrice
+        currentStop = inCallTrade ? callStopLevel : putStopLevel
+        currentTarget = inCallTrade ? callTargetLevel : putTargetLevel
+        tradeType = inCallTrade ? "CALL" : "PUT"
+        
+        // Row 5: Position
+        table.cell(statusPanel, 0, 5, "Position", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+        table.cell(statusPanel, 1, 5, tradeType + " @ " + str.tostring(currentEntry, "#.##"), bgcolor=rowBg2, text_color=txtColor, text_size=size.small)
+        
+        // Row 6: P&L
+        currentPnL = inCallTrade ? ((closeAlert - currentEntry) / currentEntry) * 100 : ((currentEntry - closeAlert) / currentEntry) * 100
+        pnlStr = currentPnL >= 0 ? "+" + str.tostring(currentPnL, "#.##") + "%" : str.tostring(currentPnL, "#.##") + "%"
+        table.cell(statusPanel, 0, 6, "P&L", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+        table.cell(statusPanel, 1, 6, pnlStr, bgcolor=rowBg1, text_color=txtColor, text_size=size.small)
+        
+        // Row 7: Stop
+        stopDist = inCallTrade ? ((closeAlert - currentStop) / closeAlert) * 100 : ((currentStop - closeAlert) / closeAlert) * 100
+        table.cell(statusPanel, 0, 7, "Stop", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+        table.cell(statusPanel, 1, 7, str.tostring(currentStop, "#.##") + " (" + str.tostring(stopDist, "#.##") + "%)", bgcolor=rowBg2, text_color=txtColor, text_size=size.small)
+        
+        // Row 8: Target
+        targetDist = inCallTrade ? ((currentTarget - closeAlert) / closeAlert) * 100 : ((closeAlert - currentTarget) / closeAlert) * 100
+        table.cell(statusPanel, 0, 8, "Target", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+        table.cell(statusPanel, 1, 8, str.tostring(currentTarget, "#.##") + " (" + str.tostring(targetDist, "#.##") + "%)", bgcolor=rowBg1, text_color=txtColor, text_size=size.small)
+        
+        // Row 9: Progress
+        totalDist = math.abs(currentTarget - currentEntry)
+        progressDist = inCallTrade ? math.max(0, closeAlert - currentEntry) : math.max(0, currentEntry - closeAlert)
+        progressPct = totalDist > 0 ? (progressDist / totalDist) * 100 : 0
+        table.cell(statusPanel, 0, 9, "Progress", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+        table.cell(statusPanel, 1, 9, str.tostring(progressPct, "#") + "% to target", bgcolor=rowBg2, text_color=txtColor, text_size=size.small)
+    else
+        // Not in trade - show signal readiness
+        // Row 5: CALL Setup
+        callReady = bullTrend and vwapBull and higherLow
+        callReadyText = callReady ? "Ready ✓" : "Not Ready"
+        table.cell(statusPanel, 0, 5, "CALL Setup", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+        table.cell(statusPanel, 1, 5, callReadyText, bgcolor=rowBg2, text_color=txtColor, text_size=size.small)
+        
+        // Row 6: PUT Setup
+        putReady = bearTrend and vwapBear and lowerHigh
+        putReadyText = putReady ? "Ready ✓" : "Not Ready"
+        table.cell(statusPanel, 0, 6, "PUT Setup", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+        table.cell(statusPanel, 1, 6, putReadyText, bgcolor=rowBg1, text_color=txtColor, text_size=size.small)
+        
+        // Row 7: Support
+        table.cell(statusPanel, 0, 7, "Support", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+        table.cell(statusPanel, 1, 7, str.tostring(supportLevel, "#.##"), bgcolor=rowBg2, text_color=txtColor, text_size=size.small)
+        
+        // Row 8: Resistance
+        table.cell(statusPanel, 0, 8, "Resistance", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+        table.cell(statusPanel, 1, 8, str.tostring(resistanceLevel, "#.##"), bgcolor=rowBg1, text_color=txtColor, text_size=size.small)
+        
+        // Row 9: ATM Strike
+        table.cell(statusPanel, 0, 9, "ATM Strike", bgcolor=headerBg, text_color=txtColor, text_size=size.small)
+        table.cell(statusPanel, 1, 9, str.tostring(atmStrike, "#.##"), bgcolor=rowBg2, text_color=txtColor, text_size=size.small)
+
+//====================== CHART LABELS ======================
+if callSignal and na(callEntryPrice[1]) and inSession
+    label.new(bar_index, highAlert, "CALL\nStrike: " + str.tostring(callStrike) + "\n" + expiryText + "\n" + tradeTypeText, style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+
+if putSignal and na(putEntryPrice[1]) and inSession
+    label.new(bar_index, lowAlert, "PUT\nStrike: " + str.tostring(putStrike) + "\n" + expiryText + "\n" + tradeTypeText, style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+
+//====================== PLOTS ======================
+plot(not na(callEntryPrice) ? callEntryPrice : na, "CALL Entry", color=color.green, linewidth=1, style=plot.style_linebr)
+plot(not na(callEntryPrice) ? callStopLevel : na, "CALL Stop", color=color.red, linewidth=1, style=plot.style_linebr)
+plot(not na(callEntryPrice) ? callTargetLevel : na, "CALL Target", color=color.lime, linewidth=1, style=plot.style_linebr)
+
+plot(not na(putEntryPrice) ? putEntryPrice : na, "PUT Entry", color=color.red, linewidth=1, style=plot.style_linebr)
+plot(not na(putEntryPrice) ? putStopLevel : na, "PUT Stop", color=color.green, linewidth=1, style=plot.style_linebr)
+plot(not na(putEntryPrice) ? putTargetLevel : na, "PUT Target", color=color.maroon, linewidth=1, style=plot.style_linebr)
+
+plot(vwapVal, "VWAP", color=color.new(color.purple, 50), linewidth=2)
