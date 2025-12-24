@@ -140,9 +140,9 @@ putPreAlert  = bearTrend and closePre < resistanceLevel and liquidityOK
 
 if inSession
     if callPreAlert and na(callEntryPrice)
-        alert("⚠️ PRE-ALERT: " + tickerSymbol + " CALL setup forming", alert.freq_once_per_bar_close)
+        alert("[EARLY CALL] " + tickerSymbol + " CALL setup forming", alert.freq_once_per_bar_close)
     if putPreAlert and na(putEntryPrice)
-        alert("⚠️ PRE-ALERT: " + tickerSymbol + " PUT setup forming", alert.freq_once_per_bar_close)
+        alert("[EARLY PUT] " + tickerSymbol + " PUT setup forming", alert.freq_once_per_bar_close)
 
 //====================== STRIKE & EXPIRY ======================
 atmStrike  = math.round(closeAlert / strikeStep) * strikeStep
@@ -173,7 +173,7 @@ if callSignal and na(callEntryPrice)
     callTargetFired := false
     callAddonFired  := false
     
-    alert("🟢 CALL ENTRY: " + tickerSymbol + "\nPrice: " + str.tostring(closeAlert, "#.##") + "\nStrike: " + str.tostring(callStrike) + "\nStop: " + str.tostring(callStopLevel, "#.##") + "\nTarget: " + str.tostring(callTargetLevel, "#.##") + "\n" + expiryText, alert.freq_once_per_bar_close)
+    alert("[CONFIRMED CALL] " + tickerSymbol + " | Strike: " + str.tostring(callStrike) + " | " + expiryText + " | Target: " + str.tostring(callTargetLevel, "#.##") , alert.freq_once_per_bar_close)
 
 // PUT Entry - only if not already in a PUT trade
 if putSignal and na(putEntryPrice)
@@ -188,51 +188,51 @@ if putSignal and na(putEntryPrice)
     putTargetFired := false
     putAddonFired  := false
     
-    alert("🔴 PUT ENTRY: " + tickerSymbol + "\nPrice: " + str.tostring(closeAlert, "#.##") + "\nStrike: " + str.tostring(putStrike) + "\nStop: " + str.tostring(putStopLevel, "#.##") + "\nTarget: " + str.tostring(putTargetLevel, "#.##") + "\n" + expiryText, alert.freq_once_per_bar_close)
+    alert("[CONFIRMED PUT] " + tickerSymbol + " | Strike: " + str.tostring(putStrike) + " | " + expiryText + " | Target: " + str.tostring(putTargetLevel, "#.##"), alert.freq_once_per_bar_close)
 
 //====================== IN-TRADE ALERTS ======================
 // CALL Trade Management
 if not na(callEntryPrice) and inSession
     // Stop Loss
     if closeAlert <= callStopLevel and not callStopFired
-        alert("🛑 STOP LOSS: " + tickerSymbol + " CALL\nEntry: " + str.tostring(callEntryPrice, "#.##") + "\nExit: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+        alert("[STOP] " + tickerSymbol + " CALL: " + str.tostring(callEntryPrice, "#.##"), alert.freq_once_per_bar_close)
         callStopFired := true
     
     // Target Hit
     if closeAlert >= callTargetLevel and not callTargetFired
-        alert("✅ TARGET HIT: " + tickerSymbol + " CALL\nEntry: " + str.tostring(callEntryPrice, "#.##") + "\nExit: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+        alert("[TARGET HIT] " + tickerSymbol + " CALL: " + str.tostring(callEntryPrice, "#.##"), alert.freq_once_per_bar_close)
         callTargetFired := true
     
     // Profit Alert
     if closeAlert >= callEntryPrice * (1 + profitPercent / 100) and not callProfitFired
-        alert("💰 CALL +" + str.tostring(profitPercent, "#") + "% PROFIT: " + tickerSymbol + "\nPrice: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+        alert("[TRIM] +" + str.tostring(profitPercent, "#") + "% PROFIT: " + tickerSymbol, alert.freq_once_per_bar_close)
         callProfitFired := true
     
     // Runner Alert
     if closeAlert >= callEntryPrice * (1 + runnerPercent / 100) and not callRunnerFired
-        alert("🏃 CALL RUNNER +" + str.tostring(runnerPercent, "#") + "%: " + tickerSymbol + "\nPrice: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+        alert("[RUNNER] +" + str.tostring(runnerPercent, "#") + "%: " + tickerSymbol, alert.freq_once_per_bar_close)
         callRunnerFired := true
 
 // PUT Trade Management
 if not na(putEntryPrice) and inSession
     // Stop Loss
     if closeAlert >= putStopLevel and not putStopFired
-        alert("🛑 STOP LOSS: " + tickerSymbol + " PUT\nEntry: " + str.tostring(putEntryPrice, "#.##") + "\nExit: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+        alert("[STOP] " + tickerSymbol + " PUT: " + str.tostring(putEntryPrice, "#.##"), alert.freq_once_per_bar_close)
         putStopFired := true
     
     // Target Hit
     if closeAlert <= putTargetLevel and not putTargetFired
-        alert("✅ TARGET HIT: " + tickerSymbol + " PUT\nEntry: " + str.tostring(putEntryPrice, "#.##") + "\nExit: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+        alert("[TARGET HIT] " + tickerSymbol + " PUT: " + str.tostring(putEntryPrice, "#.##"), alert.freq_once_per_bar_close)
         putTargetFired := true
     
     // Profit Alert
     if closeAlert <= putEntryPrice * (1 - profitPercent / 100) and not putProfitFired
-        alert("💰 PUT +" + str.tostring(profitPercent, "#") + "% PROFIT: " + tickerSymbol + "\nPrice: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+        alert("[TRIM] +" + str.tostring(profitPercent, "#") + "% PROFIT: " + tickerSymbol, alert.freq_once_per_bar_close)
         putProfitFired := true
     
     // Runner Alert
     if closeAlert <= putEntryPrice * (1 - runnerPercent / 100) and not putRunnerFired
-        alert("🏃 PUT RUNNER +" + str.tostring(runnerPercent, "#") + "%: " + tickerSymbol + "\nPrice: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+        alert("[RUNNER] +" + str.tostring(runnerPercent, "#") + "%: " + tickerSymbol, alert.freq_once_per_bar_close)
         putRunnerFired := true
 
 //====================== ADDON ALERTS ======================
@@ -240,11 +240,11 @@ callAddon = not na(callEntryPrice) and callValid and closeAlert > callStopLevel 
 putAddon  = not na(putEntryPrice) and putValid and closeAlert < putStopLevel and closeAlert < putEntryPrice and not putAddonFired
 
 if callAddon and inSession
-    alert("➕ CALL ADDON: " + tickerSymbol + "\nPrice: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+    alert("[ADD CALL] " + tickerSymbol, alert.freq_once_per_bar_close)
     callAddonFired := true
 
 if putAddon and inSession
-    alert("➕ PUT ADDON: " + tickerSymbol + "\nPrice: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+    alert("[ADD PUT] " + tickerSymbol, alert.freq_once_per_bar_close)
     putAddonFired := true
 
 //====================== TRADE EXIT DETECTION ======================
@@ -253,11 +253,11 @@ putClosed  = not na(putEntryPrice) and (putStopFired or putTargetFired or time >
 
 // Force exit alert
 if not na(callEntryPrice) and time >= forceExitTime and not callStopFired and not callTargetFired and not callForceExitFired
-    alert("⏰ FORCE EXIT: " + tickerSymbol + " CALL\nPrice: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+    alert("[FORCE EXIT] " + tickerSymbol + " CALL: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
     callForceExitFired := true
 
 if not na(putEntryPrice) and time >= forceExitTime and not putStopFired and not putTargetFired and not putForceExitFired
-    alert("⏰ FORCE EXIT: " + tickerSymbol + " PUT\nPrice: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
+    alert("[FORCE EXIT] " + tickerSymbol + " PUT: " + str.tostring(closeAlert, "#.##"), alert.freq_once_per_bar_close)
     putForceExitFired := true
 
 //====================== TABLES ======================
