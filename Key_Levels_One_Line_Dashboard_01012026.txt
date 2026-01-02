@@ -1,0 +1,681 @@
+
+//@version=5
+indicator("Key Levels Dashboard", overlay=true, max_labels_count=500, max_bars_back=5000)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INPUTS
+// ══════════════════════════════════════════════════════════════════════════════
+i_buffer          = input.float(0.20, "Alert Buffer ($)")
+i_tf              = input.string("D", "Key Level Base TF", options=["D", "W", "M"])
+i_bars_hold       = input.int(2, "Bars Level Must Hold", minval=1, maxval=10)
+i_use_wick_retest = input.bool(true, "Use Wick-Only Retest")
+i_lookback_months = input.int(18, "Lookback (Months)", minval=1, maxval=120)
+i_zz_depth        = input.int(8, "ZigZag Pivot Depth", minval=3, maxval=20)
+
+i_min_retr_w2     = input.float(0.30, "Min W2 Retrace", minval=0.1, maxval=0.9, step=0.01)
+i_max_retr_w2     = input.float(0.90, "Max W2 Retrace", minval=0.5, maxval=1.0, step=0.01)
+i_min_ext_w3      = input.float(0.80, "Min W3 Extension", minval=0.5, maxval=2.0, step=0.01)
+
+i_atr_len         = input.int(14, "ATR Length", minval=5, maxval=50)
+i_atr_mult        = input.float(0.236, "ATR Trigger %", minval=0.1, maxval=1.0, step=0.01)
+
+i_show_ew_fib     = input.bool(true, "Show EW & Fib in Dashboard")
+i_use_options_lbl = input.bool(true, "Use Options Labels")
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CONSTANTS & COLORS
+// ══════════════════════════════════════════════════════════════════════════════
+FMT = "#.##"
+CLR_BULL   = color.rgb(0, 180, 80)
+CLR_BEAR   = color.rgb(200, 50, 50)
+CLR_CHOP   = color.rgb(255, 165, 0)
+CLR_HEADER = color.rgb(255, 140, 0)
+CLR_LEVEL  = color.rgb(0, 150, 70)
+CLR_TARGET = color.rgb(0, 120, 200)
+CLR_ATR    = color.rgb(120, 70, 160)
+CLR_EW     = color.rgb(40, 80, 120)
+CLR_FIB    = color.rgb(20, 60, 120)
+CLR_EXT    = color.rgb(0, 140, 150)
+MAX_HIST   = 5000
+MAX_PIVS   = 50
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PERSISTENT STATE
+// ══════════════════════════════════════════════════════════════════════════════
+var float[] piv_val  = array.new_float()
+var int[]   piv_type = array.new_int()
+var int[] piv_bar = array.new_int()
+var float[] zz_highs_lock = array.new_float()
+var float[] zz_lows_lock  = array.new_float()
+var float L1 = na, var float L2 = na, var float L3 = na
+var float ew_w1 = na, var float ew_w2 = na, var float ew_w3 = na, var float ew_w4 = na, var float ew_w5 = na
+var bool  ew_found = false
+var string ew_dir = "NONE"
+var float ew_invalid = na
+var int ew_age = 0
+var float fib_50 = na, var float fib_618 = na, var float fib_786 = na, var float fib_886 = na
+var float ext_127 = na, var float ext_162 = na, var float ext_200 = na
+var string fib_src = "N/A"
+var bool piv_dirty = false
+var bool piv_ready_for_ew = false
+var bool ew_wait_new_pivot = false
+var float T1 = na, var float T2 = na, var float T3 = na
+var bool targets_locked = false
+var bool ew_lock_disabled = false
+var int last_alert_bar = na
+var float T1_lock = na, var float T2_lock = na, var float T3_lock = na
+var int hold_L1 = 0, var int hold_L2 = 0, var int hold_L3 = 0
+var string zz_structure = "N/A"
+var color  zz_struct_clr = CLR_CHOP
+var table tbl = table.new(position.bottom_right, 1, 18, border_width=1)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// HTF DATA
+// ══════════════════════════════════════════════════════════════════════════════
+[htf_h, htf_l, htf_c] = request.security(syminfo.tickerid, i_tf, [high, low, close], barmerge.gaps_off, barmerge.lookahead_off)
+new_htf_close = (ta.change(time(i_tf)) != 0) and barstate.isconfirmed
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CORE CALCULATIONS
+// ══════════════════════════════════════════════════════════════════════════════
+bars_lb  = math.min(i_lookback_months * 21, MAX_HIST)
+rng_h    = ta.highest(htf_h, bars_lb)
+rng_l    = ta.lowest(htf_l, bars_lb)
+rng_m    = (rng_h + rng_l) * 0.5
+htf_piv_h = ta.pivothigh(htf_h, i_zz_depth, i_zz_depth)
+htf_piv_l = ta.pivotlow(htf_l, i_zz_depth, i_zz_depth)
+
+// ─────────────────────────────────────────────────────────────
+// STORE HTF PIVOTS FOR EW
+// type: 1 = high, 0 = low
+// ─────────────────────────────────────────────────────────────
+if not na(htf_piv_h)
+    array.push(piv_val, htf_piv_h)
+    array.push(piv_type, 1)
+    array.push(piv_bar, bar_index - i_zz_depth)
+    piv_dirty := true
+    piv_ready_for_ew := true
+    ew_wait_new_pivot := false
+    ew_lock_disabled := false
+
+if not na(htf_piv_l)
+    array.push(piv_val, htf_piv_l)
+    array.push(piv_type, 0)
+    array.push(piv_bar, bar_index - i_zz_depth)
+    piv_dirty := true
+    piv_ready_for_ew := true
+    ew_wait_new_pivot := false
+    ew_lock_disabled := false
+
+// Keep arrays bounded
+if array.size(piv_val) > MAX_PIVS
+    while array.size(piv_val) > 15
+        array.shift(piv_val)
+        array.shift(piv_type)
+        array.shift(piv_bar)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INTRADAY TREND & ATR
+// ══════════════════════════════════════════════════════════════════════════════
+e8  = ta.ema(close, 8)
+e21 = ta.ema(close, 21)
+e34 = ta.ema(close, 34)
+atr = ta.atr(i_atr_len)
+
+// Trend
+bull = close >= e8 and e8 >= e21 and e21 >= e34
+bear = close <= e8 and e8 <= e21 and e21 <= e34
+chop = not bull and not bear
+
+t_clr = bull ? CLR_BULL : bear ? CLR_BEAR : CLR_CHOP
+t_dir = bull ? "BULL" : bear ? "BEAR" : "CHOP"
+
+// Trend strength
+spread = atr > 0 ? math.abs(e8 - e34) / atr : 0
+t_type = chop or spread < 0.3 ? "CHOPPY" : spread < 0.6 ? "NORMAL" : spread < 1.0 ? "MOMENTUM" : "POWER"
+t_risk = t_type == "CHOPPY" ? "Range (0%)" : t_type == "NORMAL" ? "Trend (2%)" : t_type == "MOMENTUM" ? "Clean (3%)" : "Breakout (0%)"
+
+// ATR triggers
+atr_call = math.round(close + atr * i_atr_mult, 2)
+atr_put  = math.round(close - atr * i_atr_mult, 2)
+lbl_l = i_use_options_lbl ? "Calls" : "Long"
+lbl_s = i_use_options_lbl ? "Puts" : "Short"
+
+// Ready text
+rdy_txt = chop ? "WAIT" : bull ? "LONG" : "SHORT"
+rdy_clr = chop ? CLR_CHOP : bull ? CLR_BULL : CLR_BEAR
+
+strong_signal = ew_found or t_type == "MOMENTUM" or t_type == "POWER"
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RESET ON NEW HTF CLOSE
+// ══════════════════════════════════════════════════════════════════════════════
+if new_htf_close
+    if array.size(piv_val) > MAX_PIVS
+        array.shift(piv_val)
+        array.shift(piv_type)
+    
+    // --- RESET ELLIOTT WAVE STATE ---
+    ew_found := false
+    ew_dir := "NONE"
+    ew_invalid := na
+    fib_src    := "N/A"
+    targets_locked := false
+    ew_lock_disabled := false
+    T1_lock := na
+    T2_lock := na
+    T3_lock := na
+    hold_L1 := 0
+    hold_L2 := 0
+    hold_L3 := 0
+    ew_age := 0
+    ew_wait_new_pivot := false
+    // Base levels (quartiles)
+    _b1 = rng_l + (rng_m - rng_l) * 0.5
+    _b2 = rng_m
+    _b3 = rng_m + (rng_h - rng_m) * 0.5
+    arr = array.new_float(3, 0)
+    array.set(arr, 0, _b1)
+    array.set(arr, 1, _b2)
+    array.set(arr, 2, _b3)
+    array.sort(arr)
+    L1 := math.round(array.get(arr,0),2)
+    L2 := math.round(array.get(arr,1),2)
+    L3 := math.round(array.get(arr,2),2)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FUNCTION: Elliott Wave Detection
+// Returns: ew_found, ew_dir, ew_w1..ew_w5, ew_invalid
+// ══════════════════════════════════════════════════════════════════════════════
+f_detect_ew_strict(piv_val, piv_type, chop, min_retr_w2, max_retr_w2, min_ext_w3) =>
+    bool   _found   = false
+    string _dir     = "NONE"
+    float  _w1      = na
+    float  _w2      = na
+    float  _w3      = na
+    float  _w4      = na
+    float  _w5      = na
+    float  _invalid = na
+
+    if chop
+        [_found, _dir, _w1, _w2, _w3, _w4, _w5, _invalid]
+
+    n = array.size(piv_val)
+    if n < 5
+        [_found, _dir, _w1, _w2, _w3, _w4, _w5, _invalid]
+
+    start_ix = math.max(n - 15, 0)
+
+    for ix = start_ix to n - 5
+        v0 = array.get(piv_val, ix)
+        v1 = array.get(piv_val, ix + 1)
+        v2 = array.get(piv_val, ix + 2)
+        v3 = array.get(piv_val, ix + 3)
+        v4 = array.get(piv_val, ix + 4)
+
+        t0 = array.get(piv_type, ix)
+        t1 = array.get(piv_type, ix + 1)
+        t2 = array.get(piv_type, ix + 2)
+        t3 = array.get(piv_type, ix + 3)
+        t4 = array.get(piv_type, ix + 4)
+
+        // ─────────────────────────────
+        // UP IMPULSE: 0-1-0-1-0
+        // ─────────────────────────────
+        if t0 == 0 and t1 == 1 and t2 == 0 and t3 == 1 and t4 == 0
+            w1 = v1 - v0
+            w2 = v1 - v2
+            w3 = v3 - v2
+
+            r2 = w1 != 0 ? w2 / w1 : 0
+            x3 = w1 != 0 ? w3 / w1 : 0
+
+            // STRICT RULES
+            valid =
+                 r2 >= min_retr_w2 and r2 <= max_retr_w2 and
+                 x3 >= min_ext_w3 and
+                 w3 > w1 and
+                 v4 > v2 and                 // Higher low
+                 v4 > v1                     // NO W4 overlap with W1
+
+            if valid
+                _found   := true
+                _dir     := "UP"
+                _w1      := v1
+                _w2      := v2
+                _w3      := v3
+                _w4      := v4
+                _w5      := v4 + w3          // Conservative W5 proj
+                _invalid := math.min(v0, v2)
+                break
+
+        // ─────────────────────────────
+        // DOWN IMPULSE: 1-0-1-0-1
+        // ─────────────────────────────
+        if t0 == 1 and t1 == 0 and t2 == 1 and t3 == 0 and t4 == 1
+            w1 = v0 - v1
+            w2 = v2 - v1
+            w3 = v2 - v3
+
+            r2 = w1 != 0 ? w2 / w1 : 0
+            x3 = w1 != 0 ? w3 / w1 : 0
+
+            // STRICT RULES
+            valid =
+                 r2 >= min_retr_w2 and r2 <= max_retr_w2 and
+                 x3 >= min_ext_w3 and
+                 w3 > w1 and
+                 v4 < v2 and                 // Lower high
+                 v4 < v1                     // NO W4 overlap with W1
+
+            if valid
+                _found   := true
+                _dir     := "DOWN"
+                _w1      := v1
+                _w2      := v2
+                _w3      := v3
+                _w4      := v4
+                _w5      := v4 - w3
+                _invalid := math.max(v0, v2)
+                break
+
+    [_found, _dir, _w1, _w2, _w3, _w4, _w5, _invalid]
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// USAGE
+// ══════════════════════════════════════════════════════════════════════════════
+if piv_dirty
+    if array.size(piv_bar) >= 2
+        for i = 0 to array.size(piv_bar) - 2
+            for j = i + 1 to array.size(piv_bar) - 1
+                if array.get(piv_bar, i) > array.get(piv_bar, j)
+                    // --- swap piv_bar ---
+                    tmp_bar = array.get(piv_bar, i)
+                    array.set(piv_bar, i, array.get(piv_bar, j))
+                    array.set(piv_bar, j, tmp_bar)
+
+                    // --- swap piv_val ---
+                    tmp_val = array.get(piv_val, i)
+                    array.set(piv_val, i, array.get(piv_val, j))
+                    array.set(piv_val, j, tmp_val)
+
+                    // --- swap piv_type ---
+                    tmp_type = array.get(piv_type, i)
+                    array.set(piv_type, i, array.get(piv_type, j))
+                    array.set(piv_type, j, tmp_type)
+        piv_dirty := false
+
+// ══════════════════════════════════════════════════════════════════════════════
+// COLLECT LAST 5 ZIGZAG HIGHS & LOWS (HTF CONFIRMED)
+// ══════════════════════════════════════════════════════════════════════════════
+
+if new_htf_close
+    array.clear(zz_highs_lock)
+    array.clear(zz_lows_lock)
+
+    if array.size(piv_val) > 0
+        for k = 0 to array.size(piv_val) - 1
+            i = array.size(piv_val) - 1 - k
+            if array.size(zz_highs_lock) < 5 or array.size(zz_lows_lock) < 5
+                typ = array.get(piv_type, i)
+                val = array.get(piv_val, i)
+
+                if typ == 1 and array.size(zz_highs_lock) < 5
+                    array.push(zz_highs_lock, val)
+
+                if typ == 0 and array.size(zz_lows_lock) < 5
+                    array.push(zz_lows_lock, val)
+            else
+                break
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ZIGZAG STRUCTURE STATE (HH/HL vs LH/LL)
+// ══════════════════════════════════════════════════════════════════════════════
+if new_htf_close
+    if array.size(zz_highs_lock) < 2 or array.size(zz_lows_lock) < 2
+        zz_structure := "N/A"
+        zz_struct_clr := CLR_CHOP
+    if array.size(zz_highs_lock) >= 3 and array.size(zz_lows_lock) >= 2
+        h0 = array.get(zz_highs_lock, 0)
+        h1 = array.get(zz_highs_lock, 1)
+        h2 = array.get(zz_highs_lock, 2)
+        l0 = array.get(zz_lows_lock, 0)
+        l1 = array.get(zz_lows_lock, 1)
+
+        if h0 > h1 and h1 > h2 and l0 > l1
+            zz_structure := "HH / HL (BULL)"
+            zz_struct_clr := CLR_BULL
+        else if h0 < h1 and h1 < h2 and l0 < l1
+            zz_structure := "LH / LL (BEAR)"
+            zz_struct_clr := CLR_BEAR
+        else
+            zz_structure := "RANGE / SHIFT"
+            zz_struct_clr := CLR_CHOP
+
+zz_bull_struct = zz_structure == "HH / HL (BULL)"
+zz_bear_struct = zz_structure == "LH / LL (BEAR)"
+zz_no_trade    = not zz_bull_struct and not zz_bear_struct
+
+// --- FORCE PIVOT ORDER BEFORE EW ---
+if piv_ready_for_ew and array.size(piv_bar) > 1
+    for i = 0 to array.size(piv_bar) - 2
+        for j = i + 1 to array.size(piv_bar) - 1
+            if array.get(piv_bar, i) > array.get(piv_bar, j)
+                // --- swap piv_bar ---
+                tmp_bar = array.get(piv_bar, i)
+                array.set(piv_bar, i, array.get(piv_bar, j))
+                array.set(piv_bar, j, tmp_bar)
+
+                // --- swap piv_val ---
+                tmp_val = array.get(piv_val, i)
+                array.set(piv_val, i, array.get(piv_val, j))
+                array.set(piv_val, j, tmp_val)
+
+                // --- swap piv_type ---
+                tmp_type = array.get(piv_type, i)
+                array.set(piv_type, i, array.get(piv_type, j))
+                array.set(piv_type, j, tmp_type)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EW STRUCTURE ALIGNMENT GATE
+// ══════════════════════════════════════════════════════════════════════════════
+ew_struct_ok = (zz_bull_struct and not zz_bear_struct) or (zz_bear_struct and not zz_bull_struct)
+
+if piv_ready_for_ew and not ew_found and not ew_wait_new_pivot and array.size(piv_val) >= 5 and ew_struct_ok
+    [found_, dir_, w1_, w2_, w3_, w4_, w5_, invalid_] = f_detect_ew_strict(piv_val, piv_type, chop, i_min_retr_w2, i_max_retr_w2, i_min_ext_w3)
+    if found_ and ((dir_ == "UP"   and zz_bull_struct) or (dir_ == "DOWN" and zz_bear_struct))
+        ew_found   := true
+        ew_dir     := dir_
+        ew_w1      := w1_
+        ew_w2      := w2_
+        ew_w3      := w3_
+        ew_w4      := w4_
+        ew_w5      := w5_
+        ew_invalid := invalid_
+        ew_age     := 0  
+        piv_ready_for_ew := false
+
+if ew_found
+    ew_age += 1
+else
+    ew_age := 0
+
+if ew_found and ew_age > 30
+    ew_found := false
+    ew_dir := "NONE"
+    ew_invalid := na
+    fib_src := "N/A"
+    targets_locked := false
+    T1_lock := na
+    T2_lock := na
+    T3_lock := na
+    ew_age := 0
+    ew_wait_new_pivot := true
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FIBONACCI LEVELS
+// ══════════════════════════════════════════════════════════════════════════════
+if ew_found
+    fib_src := "EW"
+    ew_rng = math.abs(ew_w1 - ew_w2)
+    sign = ew_dir == "UP" ? 1 : -1
+    base = ew_w1
+
+    fib_50  := base - ew_rng * 0.5 * sign
+    fib_618 := base - ew_rng * 0.618 * sign
+    fib_786 := base - ew_rng * 0.786 * sign
+    fib_886 := base - ew_rng * 0.886 * sign
+    ext_127 := base + ew_rng * 1.272 * sign
+    ext_162 := base + ew_rng * 1.618 * sign
+    ext_200 := base + ew_rng * 2.0 * sign
+
+    T1 := ext_127
+    T2 := ext_162
+    T3 := ext_200
+
+// Precompute L2 crossover/crossunder for EW lock
+crossover_L2 = ta.crossover(close, L2)
+crossunder_L2 = ta.crossunder(close, L2)
+lock_condition = ew_found and not targets_locked and barstate.isconfirmed and (ew_dir == "UP" ? crossover_L2 : ew_dir == "DOWN" ? crossunder_L2 : false)
+
+// Lock targets if condition met
+if not targets_locked and lock_condition and not na(T1)
+    targets_locked := true
+    T1_lock := T1
+    T2_lock := T2
+    T3_lock := T3
+
+if targets_locked
+    T1 := T1_lock
+    T2 := T2_lock
+    T3 := T3_lock
+// ══════════════════════════════════════════════════════════════════════════════
+// ENTRY SIGNALS
+// ══════════════════════════════════════════════════════════════════════════════
+brk1 = close > L1 and close[1] <= L1
+brk2 = close > L2 and close[1] <= L2
+brk3 = close > L3 and close[1] <= L3
+
+brk1d = close < L1 and close[1] >= L1
+brk2d = close < L2 and close[1] >= L2
+brk3d = close < L3 and close[1] >= L3
+
+is_long  = (bull or (ew_found and ew_dir == "UP")) and zz_bull_struct and not chop
+is_short = (bear or (ew_found and ew_dir == "DOWN")) and zz_bear_struct and not chop
+
+prev_long  = is_long[1]
+prev_short = is_short[1]
+
+// Wick-only retest
+max_wick = atr * 0.25
+rt1 = i_use_wick_retest ? (is_long ? (low <= L1 and close > L1 and (L1 - low) <= max_wick) : (high >= L1 and close < L1 and (high - L1) <= max_wick)) : (is_long ? close >= L1 : close <= L1)
+rt2 = i_use_wick_retest ? (is_long ? (low <= L2 and close > L2 and (L2 - low) <= max_wick) : (high >= L2 and close < L2 and (high - L2) <= max_wick)) : (is_long ? close >= L2 : close <= L2)
+rt3 = i_use_wick_retest ? (is_long ? (low <= L3 and close > L3 and (L3 - low) <= max_wick) : (high >= L3 and close < L3 and (high - L3) <= max_wick)) : (is_long ? close >= L3 : close <= L3)
+
+if (is_long and prev_short) or (is_short and prev_long)
+    hold_L1 := 0
+    hold_L2 := 0
+    hold_L3 := 0
+
+// Bars holding levels
+if is_long
+    hold_L1 := close >= L1 ? hold_L1 + 1 : 0
+    hold_L2 := close >= L2 ? hold_L2 + 1 : 0
+    hold_L3 := close >= L3 ? hold_L3 + 1 : 0
+else if is_short
+    hold_L1 := close <= L1 ? hold_L1 + 1 : 0
+    hold_L2 := close <= L2 ? hold_L2 + 1 : 0
+    hold_L3 := close <= L3 ? hold_L3 + 1 : 0
+
+hld1 = hold_L1 >= i_bars_hold
+hld2 = hold_L2 >= i_bars_hold
+hld3 = hold_L3 >= i_bars_hold
+
+ent1 = ((is_long  and brk1)  or (is_short and brk1d)) and rt1 and hld1 and not ew_lock_disabled and barstate.isconfirmed
+ent2 = ((is_long  and brk2)  or (is_short and brk2d)) and rt2 and hld2 and not ew_lock_disabled and barstate.isconfirmed
+ent3 = ((is_long  and brk3)  or (is_short and brk3d)) and rt3 and hld3 and not ew_lock_disabled and barstate.isconfirmed
+
+struct_ok = (is_long and zz_bull_struct) or (is_short and zz_bear_struct)
+ent1 := ent1 and struct_ok
+ent2 := ent2 and struct_ok
+ent3 := ent3 and struct_ok
+
+ent1 := ent1 and strong_signal
+ent2 := ent2 and strong_signal
+ent3 := ent3 and strong_signal
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PATTERN DETECTION NEAR LEVELS
+// ══════════════════════════════════════════════════════════════════════════════
+nr1 = math.abs(close - L1) <= i_buffer
+nr2 = math.abs(close - L2) <= i_buffer
+nr3 = math.abs(close - L3) <= i_buffer
+need_ptn = (nr1 or nr2 or nr3) and bar_index >= 3 and not new_htf_close
+min_body  = atr * 0.2
+min_range = atr * 0.5
+bull_ptn = false
+bear_ptn = false
+body  = math.abs(close[1] - open[1])
+bar_rng = high[1] - low[1]
+
+if need_ptn and t_type != "CHOPPY" and body >= min_body and bar_rng >= min_range
+    bull_ptn := (open[2] > close[2] and close[1] > open[1] and open[1] <= close[2] and close[1] >= open[2]) or (bar_rng > 0 and (high[1] - math.max(open[1], close[1])) <= bar_rng * 0.25 and (math.min(open[1], close[1]) - low[1]) >= bar_rng * 0.5) or (close[3] < open[3] and close[2] < open[2] and close[1] > (open[3] + close[3]) * 0.5)
+    bear_ptn := (open[2] < close[2] and close[1] < open[1] and open[1] >= close[2] and close[1] <= open[2]) or (bar_rng > 0 and (math.max(open[1], close[1]) - low[1]) <= bar_rng * 0.25 and (high[1] - math.min(open[1], close[1])) >= bar_rng * 0.5) or (close[3] > open[3] and close[2] > open[2] and close[1] < (open[3] + close[3]) * 0.5)
+
+f_fmt_list(arr) =>
+    if array.size(arr) == 0
+        "N/A"
+    else
+        string s = ""
+        for i = 0 to array.size(arr) - 1
+            s += (i > 0 ? " | " : "") + str.tostring(array.get(arr, i), FMT)
+        s
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DASHBOARD DISPLAY
+// ══════════════════════════════════════════════════════════════════════════════
+if barstate.islast
+    r = 0
+    table.cell(tbl, 0, r, syminfo.ticker + " | Key Levels", text_color=color.white, bgcolor=CLR_HEADER)
+    r += 1
+    table.cell(tbl, 0, r, "Ready: " + rdy_txt, text_color=color.white, bgcolor=rdy_clr)
+    r += 1
+    table.cell(tbl, 0, r, "Trend: " + t_dir + " | " + t_type, text_color=color.white, bgcolor=t_clr)
+    r += 1
+    table.cell(tbl, 0, r, "L1/L2/L3: " + str.tostring(L1,FMT) + " / " + str.tostring(L2,FMT) + " / " + str.tostring(L3,FMT), text_color=color.white, bgcolor=CLR_LEVEL)
+    r += 1
+    t_src = targets_locked ? "(LOCKED)" : ew_found ? "(EW)" : fib_src == "ATR" ? "(ATR)" : "(N/A)"
+    t_arr = ew_dir == "UP" ? "↑" : ew_dir == "DOWN" ? "↓" : bull ? "↑" : bear ? "↓" : "→"
+    table.cell(tbl, 0, r, "T1/T2/T3 " + t_src + t_arr + ": " + str.tostring(T1,FMT) + " / " + str.tostring(T2,FMT) + " / " + str.tostring(T3,FMT), text_color=color.white, bgcolor=CLR_TARGET)
+    r += 1
+    table.cell(tbl, 0, r, "ZZ Structure: " + zz_structure, text_color=color.white, bgcolor=zz_struct_clr)
+    r += 1
+    table.cell(tbl, 0, r, "ZZ Highs: " + f_fmt_list(zz_highs_lock), text_color=color.white, bgcolor=CLR_BEAR)
+    r += 1
+    table.cell(tbl, 0, r, "ZZ Lows: " + f_fmt_list(zz_lows_lock), text_color=color.white, bgcolor=CLR_BULL)
+    r += 1
+    tr_now = high - low
+    atr_p = close > 0 ? atr / close * 100 : 0
+    table.cell(tbl, 0, r, "ATR: " + str.tostring(atr,FMT) + " (" + str.tostring(atr_p,"#.#") + "%) | TR: " + str.tostring(tr_now,FMT), text_color=color.white, bgcolor=CLR_ATR)
+    r += 1
+    table.cell(tbl, 0, r, lbl_l + " > " + str.tostring(atr_call,FMT) + " | " + lbl_s + " < " + str.tostring(atr_put,FMT), text_color=color.white, bgcolor=CLR_ATR)
+    r += 1
+    table.cell(tbl, 0, r, "Risk: " + t_risk, text_color=color.white, bgcolor=t_clr)
+    r += 1
+    if i_show_ew_fib
+        if ew_found
+            table.cell(tbl, 0, r, "EW " + ew_dir + ": " + str.tostring(ew_w1,FMT) + "/" + str.tostring(ew_w2,FMT) + "/" + str.tostring(ew_w3,FMT) + "/" + str.tostring(ew_w4,FMT), text_color=color.white, bgcolor=CLR_EW)
+            r += 1
+            table.cell(tbl, 0, r, "Fib: .5=" + str.tostring(fib_50,FMT) + " .618=" + str.tostring(fib_618,FMT) + " .786=" + str.tostring(fib_786,FMT), text_color=color.white, bgcolor=CLR_FIB)
+            r += 1
+            table.cell(tbl, 0, r, "Ext: 1.27=" + str.tostring(ext_127,FMT) + " 1.62=" + str.tostring(ext_162,FMT) + " 2.0=" + str.tostring(ext_200,FMT), text_color=color.white, bgcolor=CLR_EXT)
+        else
+            table.cell(tbl, 0, r, "EW: None | Fib: N/A", text_color=color.rgb(67, 28, 28), bgcolor=color.rgb(80,80,80))
+// ══════════════════════════════════════════════════════════════════════════════
+// ALERTS
+// ══════════════════════════════════════════════════════════════════════════════
+var bool fire = false
+var string alrt = ""
+
+// Reset fire
+if fire and barstate.isconfirmed and bar_index != last_alert_bar
+    fire := false
+    alrt := ""
+
+// Pattern near levels
+if need_ptn and not fire
+    if nr1 and bull_ptn and is_long
+        fire := true, alrt := "L1 + Bull @ " + str.tostring(L1,FMT)
+    else if nr1 and bear_ptn and is_short
+        fire := true, alrt := "L1 + Bear @ " + str.tostring(L1,FMT)
+    else if nr2 and bull_ptn and is_long
+        fire := true, alrt := "L2 + Bull @ " + str.tostring(L2,FMT)
+    else if nr2 and bear_ptn and is_short
+        fire := true, alrt := "L2 + Bear @ " + str.tostring(L2,FMT)
+    else if nr3 and bull_ptn and is_long
+        fire := true, alrt := "L3 + Bull @ " + str.tostring(L3,FMT)
+    else if nr3 and bear_ptn and is_short
+        fire := true, alrt := "L3 + Bear @ " + str.tostring(L3,FMT)
+
+// Breakouts
+xL1u = ta.crossover(close, L1)
+xL1d = ta.crossunder(close, L1)
+xL2u = ta.crossover(close, L2)
+xL2d = ta.crossunder(close, L2)
+xL3u = ta.crossover(close, L3)
+xL3d = ta.crossunder(close, L3)
+
+if not fire
+    if xL1u and is_long and zz_bull_struct
+        fire := true, alrt := "BREAK ↑ L1 @ " + str.tostring(L1,FMT)
+    else if xL1d and is_short and zz_bear_struct
+        fire := true, alrt := "BREAK ↓ L1 @ " + str.tostring(L1,FMT)
+    else if xL2u and is_long and zz_bull_struct
+        fire := true, alrt := "BREAK ↑ L2 @ " + str.tostring(L2,FMT)
+    else if xL2d and is_short and zz_bear_struct
+        fire := true, alrt := "BREAK ↓ L2 @ " + str.tostring(L2,FMT)
+    else if xL3u and is_long and zz_bull_struct
+        fire := true, alrt := "BREAK ↑ L3 @ " + str.tostring(L3,FMT)
+    else if xL3d and is_short and zz_bear_struct
+        fire := true, alrt := "BREAK ↓ L3 @ " + str.tostring(L3,FMT)
+
+// Advanced entries
+if not fire
+    if ent1
+        fire := true, alrt := "ADV L1 @ " + str.tostring(L1,FMT)
+    else if ent2
+        fire := true, alrt := "ADV L2 @ " + str.tostring(L2,FMT)
+    else if ent3
+        fire := true, alrt := "ADV L3 @ " + str.tostring(L3,FMT)
+
+// Targets
+if not fire and not na(T1)
+    bull_dir = ew_dir == "UP" or (not ew_found and bull)
+    bear_dir = ew_dir == "DOWN" or (not ew_found and bear)
+    
+    if bull_dir
+        if close >= T1 and close[1] < T1
+            fire := true, alrt := "T1 ↑ @ " + str.tostring(T1,FMT)
+        else if close >= T2 and close[1] < T2
+            fire := true, alrt := "T2 ↑ @ " + str.tostring(T2,FMT)
+        else if close >= T3 and close[1] < T3
+            fire := true, alrt := "T3 ↑ @ " + str.tostring(T3,FMT)
+    
+    if not fire and bear_dir
+        if close <= T1 and close[1] > T1
+            fire := true, alrt := "T1 ↓ @ " + str.tostring(T1,FMT)
+        else if close <= T2 and close[1] > T2
+            fire := true, alrt := "T2 ↓ @ " + str.tostring(T2,FMT)
+        else if close <= T3 and close[1] > T3
+            fire := true, alrt := "T3 ↓ @ " + str.tostring(T3,FMT)
+
+// EW invalidation
+if not fire and ew_found and not ew_lock_disabled and not na(ew_invalid)
+    if (ew_dir == "UP" and close < ew_invalid) or (ew_dir == "DOWN" and close > ew_invalid)
+        fire := true
+        alrt := "⚠ EW INVALID @ " + str.tostring(ew_invalid,FMT)
+        ew_found := false
+        ew_dir := "NONE"
+        fib_src := "N/A"
+        targets_locked := false
+        T1_lock := na
+        T2_lock := na
+        T3_lock := na
+        ew_lock_disabled := true
+        ew_wait_new_pivot := true
+
+// ATR triggers
+uATR = ta.crossover(close, atr_call)
+dATR = ta.crossunder(close, atr_put)
+if not fire
+    if uATR and is_long
+        fire := true, alrt := lbl_l + " @ " + str.tostring(atr_call,FMT)
+    else if dATR and is_short
+        fire := true, alrt := lbl_s + " @ " + str.tostring(atr_put,FMT)
+
+// Fire alert
+if fire and barstate.isconfirmed and bar_index != last_alert_bar
+    alert(alrt, alert.freq_once_per_bar)
+    last_alert_bar := bar_index
