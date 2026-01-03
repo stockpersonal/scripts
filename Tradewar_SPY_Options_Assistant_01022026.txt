@@ -6,18 +6,18 @@ indicator("Tradewar SPY Options Assistant", overlay=true)
 // ─── CALL Options ───
 groupCall = "═══ SPY CALLS ═══"
 enableCall      = input.bool(true, "Enable CALL Alerts", group=groupCall, tooltip="Turn OFF if analyst didn't provide CALL levels today")
-callStrike      = input.float(688, "STRIKE ($)", group=groupCall, step=1)
-callExp         = input.string("DEC-31-25", "EXP (e.g., DEC-24-25)", group=groupCall)
-callEntry       = input.float(688, "ENTRY: Breaks ($)", group=groupCall, step=0.01)
-callTargetInput = input.float(1.0, "TARGET Distance ($)", group=groupCall, step=0.01, tooltip="Distance from entry to final target")
+callStrike      = input.float(686, "STRIKE ($)", group=groupCall, step=1)
+callExp         = input.string("DEC-24-25", "EXP (e.g., DEC-24-25)", group=groupCall)
+callTargetPrice = input.float(689.5, "TARGET Price ($)", group=groupCall, step=0.01, tooltip="Final target price from analyst")
+callEntry       = input.float(688.21, "ENTRY: Breaks ($)", group=groupCall, step=0.01)
 
 // ─── PUT Options ───
 groupPut = "═══ SPY PUTS ═══"
 enablePut      = input.bool(true, "Enable PUT Alerts", group=groupPut, tooltip="Turn OFF if analyst didn't provide PUT levels today")
-putStrike      = input.float(687, "STRIKE ($)", group=groupPut, step=1)
-putExp         = input.string("DEC-31-25", "EXP (e.g., DEC-24-25)", group=groupPut)
-putEntry       = input.float(686.5, "ENTRY: Loses ($)", group=groupPut, step=0.01)
-putTargetInput = input.float(1.0, "TARGET Distance ($)", group=groupPut, step=0.01, tooltip="Distance from entry to final target")
+putStrike      = input.float(684, "STRIKE ($)", group=groupPut, step=1)
+putExp         = input.string("DEC-24-25", "EXP (e.g., DEC-24-25)", group=groupPut)
+putTargetPrice = input.float(681, "TARGET Price ($)", group=groupPut, step=0.01, tooltip="Final target price from analyst")
+putEntry       = input.float(683.5, "ENTRY: Loses ($)", group=groupPut, step=0.01)
 
 // ─── Timing Settings ───
 groupSettings = "═══ SETTINGS ═══"
@@ -283,8 +283,8 @@ putLotoAllowed       = useLotoAlert and lotoDowntrend and not pureUptrend5m and 
 // SECTION 10: HELPER CONDITIONS
 // ══════════════════════════════════════════════════════════════════════════════
 // ─── Valid Setup Check ───
-hasCall = enableCall and callEntry > 0 and callTargetInput > 0
-hasPut  = enablePut and putEntry > 0 and putTargetInput > 0
+hasCall = enableCall and callEntry > 0 and callTargetPrice > callEntry
+hasPut  = enablePut and putEntry > 0 and putTargetPrice < putEntry
 
 // ─── Approaching Detection ───
 callApproaching = hasCall and priceNow < callEntry and priceNow >= callEntry - earlyAlertDist and approachingOK
@@ -341,9 +341,10 @@ if callState == TradeState.IDLE and callApproaching and isRTH and not isExpired 
 if callReadyToEnter
     callEntryPrice := callEntry
     callStopPrice  := callEntryPrice - stopOffset
-    callT1Final    := callEntryPrice + (callTargetInput * T1_PCT)
-    callT2Final    := callEntryPrice + (callTargetInput * T2_PCT)
-    callT3Final    := callEntryPrice + (callTargetInput * T3_PCT)
+    callTargetDist = callTargetPrice - callEntry
+    callT1Final    := callEntryPrice + (callTargetDist * T1_PCT)
+    callT2Final    := callEntryPrice + (callTargetDist * T2_PCT)
+    callT3Final    := callEntryPrice + (callTargetDist * T3_PCT)
     callEntryMode  := callEntryType
     callEntryBar   := bar_index
     callGapPending := false
@@ -404,9 +405,10 @@ if putState == TradeState.IDLE and putApproaching and isRTH and not isExpired an
 if putReadyToEnter
     putEntryPrice := putEntry
     putStopPrice  := putEntryPrice + stopOffset
-    putT1Final    := putEntryPrice - (putTargetInput * T1_PCT)
-    putT2Final    := putEntryPrice - (putTargetInput * T2_PCT)
-    putT3Final    := putEntryPrice - (putTargetInput * T3_PCT)
+    putTargetDist = putEntry - putTargetPrice
+    putT1Final    := putEntryPrice - (putTargetDist * T1_PCT)
+    putT2Final    := putEntryPrice - (putTargetDist * T2_PCT)
+    putT3Final    := putEntryPrice - (putTargetDist * T3_PCT)
     putEntryMode  := putEntryType
     putEntryBar   := bar_index
     putGapPending := false
