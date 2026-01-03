@@ -121,6 +121,8 @@ var bool putEarlyFiredToday  = false
 var bool callGapPending = false
 var bool putGapPending  = false
 var string directionLockedToday = ""
+var bool callHadTrade = false  // Blocks LOTO on re-entry
+var bool putHadTrade  = false  // Blocks LOTO on re-entry
 
 // ─── Protection Alert Flags (once per day) ───
 var bool spikeAlertFired    = false
@@ -271,11 +273,11 @@ lotoDowntrend = emaBearish1m and (not useVwapConfirm or vwapBearish1m)
 pureDowntrend5m = emaBearish5m and vwapBearish5m
 pureUptrend5m   = emaBullish5m and vwapBullish5m
 
-// ─── Entry Permissions ───
+// ─── Entry Permissions (LOTO blocked on re-entry to reduce false breakouts) ───
 callConfirmedAllowed = not useTrendFilter or confirmedUptrend
 putConfirmedAllowed  = not useTrendFilter or confirmedDowntrend
-callLotoAllowed      = useLotoAlert and lotoUptrend and not pureDowntrend5m
-putLotoAllowed       = useLotoAlert and lotoDowntrend and not pureUptrend5m
+callLotoAllowed      = useLotoAlert and lotoUptrend and not pureDowntrend5m and not callHadTrade
+putLotoAllowed       = useLotoAlert and lotoDowntrend and not pureUptrend5m and not putHadTrade
 
 // ══════════════════════════════════════════════════════════════════════════════
 // SECTION 10: HELPER CONDITIONS
@@ -303,13 +305,13 @@ putBreakOrGap  = putBreak or putGapThrough or (putGapPending and priceNow <= put
 
 // ─── Entry Condition Calculations ───
 callCanEnter       = callBreakOrGap and isRTH and not isExpired and not isSpike and volumeOK and not inMiddayChop and priceNow <= callEntry + MAX_ENTRY_SLIPPAGE and not forceExit and (directionLockedToday == "" or directionLockedToday == "CALL")
-callLotoReady      = callCanEnter and lotoWindowOK and callLotoAllowed
+callLotoReady      = callCanEnter and lotoWindowOK and callLotoAllowed and not callHadTrade
 callConfirmedReady = callCanEnter and confirmedOK and callConfirmedAllowed
 callReadyToEnter   = (callState == TradeState.IDLE or callState == TradeState.EARLY) and (callLotoReady or callConfirmedReady)
 callEntryType      = callLotoReady ? "LOTO" : "CONFIRMED"
 
 putCanEnter       = putBreakOrGap and isRTH and not isExpired and not isSpike and volumeOK and not inMiddayChop and priceNow >= putEntry - MAX_ENTRY_SLIPPAGE and not forceExit and (directionLockedToday == "" or directionLockedToday == "PUT")
-putLotoReady      = putCanEnter and lotoWindowOK and putLotoAllowed
+putLotoReady      = putCanEnter and lotoWindowOK and putLotoAllowed and not putHadTrade
 putConfirmedReady = putCanEnter and confirmedOK and putConfirmedAllowed
 putReadyToEnter   = (putState == TradeState.IDLE or putState == TradeState.EARLY) and (putLotoReady or putConfirmedReady)
 putEntryType      = putLotoReady ? "LOTO" : "CONFIRMED"
@@ -345,6 +347,7 @@ if callReadyToEnter
     callEntryMode  := callEntryType
     callEntryBar   := bar_index
     callGapPending := false
+    callHadTrade   := true  // Block LOTO on re-entry
     directionLockedToday := "CALL"
     callState := TradeState.IN_TRADE
     evt_callEntry := true
@@ -371,11 +374,12 @@ if callState == TradeState.IN_TRADE and bar_index > callEntryBar and not callT2H
     callState := TradeState.EXITED
     evt_callStop := true
 
-// EXITED → IDLE (state only - preserve data for alerts)
+// EXITED → IDLE (state only - preserve data for alerts, allow EARLY again)
 // Data is overwritten on next entry or cleared on daily reset
 if callState == TradeState.EXITED
     callT1Hit := false
     callT2Hit := false
+    callEarlyFiredToday := false  // Allow EARLY again after exit
     callState := TradeState.IDLE
 
 // EARLY Timeout (price moved away)
@@ -406,6 +410,7 @@ if putReadyToEnter
     putEntryMode  := putEntryType
     putEntryBar   := bar_index
     putGapPending := false
+    putHadTrade   := true  // Block LOTO on re-entry
     directionLockedToday := "PUT"
     putState := TradeState.IN_TRADE
     evt_putEntry := true
@@ -432,11 +437,12 @@ if putState == TradeState.IN_TRADE and bar_index > putEntryBar and not putT2Hit 
     putState := TradeState.EXITED
     evt_putStop := true
 
-// EXITED → IDLE (state only - preserve data for alerts)
+// EXITED → IDLE (state only - preserve data for alerts, allow EARLY again)
 // Data is overwritten on next entry or cleared on daily reset
 if putState == TradeState.EXITED
     putT1Hit := false
     putT2Hit := false
+    putEarlyFiredToday := false  // Allow EARLY again after exit
     putState := TradeState.IDLE
 
 // EARLY Timeout (price moved away)
@@ -507,15 +513,16 @@ if evt_callGapPend and isLiveBar and showWarningAlerts
 if evt_callEarly and isLiveBar
     alert("[EARLY] CALL SPY | $" + str.tostring(callStrike, "#") + "C " + callExp + " | Price $" + str.tostring(priceNow, "#.##") + " | Approaching $" + str.tostring(callEntry, "#.##"), alert.freq_once_per_bar)
 
-// Trade alerts (always on - essential)
-// Note: LOTO uses freq_once_per_bar (faster), CONFIRMED uses freq_once_per_bar_close (safer)
+// Trade alerts (FIRST trade: LOTO allowed | Re-entry: CONFIRMED only)
 if evt_callEntry and isLiveBar and not tradeAlertFiredThisBar
-    callAlertMsg = "[" + callEntryMode + "] CALL SPY | $" + str.tostring(callStrike, "#") + "C " + callExp + " | Entry $" + str.tostring(callEntryPrice, "#.##") + " | Stop $" + str.tostring(callStopPrice, "#.##") + " | T1 $" + str.tostring(callT1Final, "#.##") + " | T2 $" + str.tostring(callT2Final, "#.##") + " | T3 $" + str.tostring(callT3Final, "#.##")
-    if callEntryMode == "LOTO"
-        alert(callAlertMsg, alert.freq_once_per_bar)
-    else
-        alert(callAlertMsg, alert.freq_once_per_bar_close)
-    tradeAlertFiredThisBar := true
+    // Defensive gate: only allow LOTO on first trade (callHadTrade[1] was false before entry set it true)
+    if callEntryMode == "CONFIRMED" or not callHadTrade[1]
+        callAlertMsg = "[" + callEntryMode + "] CALL SPY | $" + str.tostring(callStrike, "#") + "C " + callExp + " | Entry $" + str.tostring(callEntryPrice, "#.##") + " | Stop $" + str.tostring(callStopPrice, "#.##") + " | T1 $" + str.tostring(callT1Final, "#.##") + " | T2 $" + str.tostring(callT2Final, "#.##") + " | T3 $" + str.tostring(callT3Final, "#.##")
+        if callEntryMode == "LOTO"
+            alert(callAlertMsg, alert.freq_once_per_bar)
+        else
+            alert(callAlertMsg, alert.freq_once_per_bar_close)
+        tradeAlertFiredThisBar := true
 
 if evt_callT1 and isLiveBar and not tradeAlertFiredThisBar
     alert("[T1 HIT] CALL SPY | $" + str.tostring(callStrike, "#") + "C " + callExp + " | Hit $" + str.tostring(callT1Final, "#.##") + " | Next T2 $" + str.tostring(callT2Final, "#.##"), alert.freq_once_per_bar)
@@ -548,15 +555,16 @@ if evt_putGapPend and isLiveBar and showWarningAlerts
 if evt_putEarly and isLiveBar
     alert("[EARLY] PUT SPY | $" + str.tostring(putStrike, "#") + "P " + putExp + " | Price $" + str.tostring(priceNow, "#.##") + " | Approaching $" + str.tostring(putEntry, "#.##"), alert.freq_once_per_bar)
 
-// Trade alerts (always on - essential)
-// Note: LOTO uses freq_once_per_bar (faster), CONFIRMED uses freq_once_per_bar_close (safer)
+// Trade alerts (FIRST trade: LOTO allowed | Re-entry: CONFIRMED only)
 if evt_putEntry and isLiveBar and not tradeAlertFiredThisBar
-    putAlertMsg = "[" + putEntryMode + "] PUT SPY | $" + str.tostring(putStrike, "#") + "P " + putExp + " | Entry $" + str.tostring(putEntryPrice, "#.##") + " | Stop $" + str.tostring(putStopPrice, "#.##") + " | T1 $" + str.tostring(putT1Final, "#.##") + " | T2 $" + str.tostring(putT2Final, "#.##") + " | T3 $" + str.tostring(putT3Final, "#.##")
-    if putEntryMode == "LOTO"
-        alert(putAlertMsg, alert.freq_once_per_bar)
-    else
-        alert(putAlertMsg, alert.freq_once_per_bar_close)
-    tradeAlertFiredThisBar := true
+    // Defensive gate: only allow LOTO on first trade (putHadTrade[1] was false before entry set it true)
+    if putEntryMode == "CONFIRMED" or not putHadTrade[1]
+        putAlertMsg = "[" + putEntryMode + "] PUT SPY | $" + str.tostring(putStrike, "#") + "P " + putExp + " | Entry $" + str.tostring(putEntryPrice, "#.##") + " | Stop $" + str.tostring(putStopPrice, "#.##") + " | T1 $" + str.tostring(putT1Final, "#.##") + " | T2 $" + str.tostring(putT2Final, "#.##") + " | T3 $" + str.tostring(putT3Final, "#.##")
+        if putEntryMode == "LOTO"
+            alert(putAlertMsg, alert.freq_once_per_bar)
+        else
+            alert(putAlertMsg, alert.freq_once_per_bar_close)
+        tradeAlertFiredThisBar := true
 
 if evt_putT1 and isLiveBar and not tradeAlertFiredThisBar
     alert("[T1 HIT] PUT SPY | $" + str.tostring(putStrike, "#") + "P " + putExp + " | Hit $" + str.tostring(putT1Final, "#.##") + " | Next T2 $" + str.tostring(putT2Final, "#.##"), alert.freq_once_per_bar)
@@ -651,6 +659,8 @@ if ta.change(time("D", "America/New_York")) != 0
 
     // Reset daily flags
     directionLockedToday := ""
+    callHadTrade := false
+    putHadTrade  := false
     spikeAlertFired  := false
     volumeAlertFired := false
     middayAlertFired := false
@@ -663,3 +673,4 @@ if evt_callAutoReset and isLiveBar and showInfoAlerts
 
 if evt_putAutoReset and isLiveBar and showInfoAlerts
     alert("[AUTO RESET] PUT SPY | $" + str.tostring(putStrike, "#") + "P " + putExp + " | Trade reset at new session", alert.freq_once_per_bar)
+
