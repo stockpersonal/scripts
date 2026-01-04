@@ -1,136 +1,512 @@
 //@version=6
 indicator("Key Levels – One-Line Dashboard", overlay=true, max_labels_count=500)
 
-// =====================
-// INPUTS
-// =====================
-buffer          = input.float(0.20, "Alert Buffer ($)")
-tf              = input.string("D", "Key Level Base TF")
-bars_hold       = input.int(2, "Bars Level Must Hold", minval=1)
-use_wick_retest = input.bool(true, "Use Wick-Only Retest")
-lookbackMonths  = input.int(18, "Lookback (Months)", minval=1)
-zz_depth        = input.int(8, "ZigZag Pivot Depth", minval=3)
-fmt             = "#.##"
+// ==============================
+// USER INPUTS
+// ==============================
+buffer            = input.float(0.20, "Alert Buffer ($)")
+tf                = input.string("D", "Key Level Base Timeframe")
+bars_hold         = input.int(2, "Bars Level Must Hold", minval=1)
+use_wick_retest   = input.bool(true, "Use Wick-Only Retest")
+lookbackMonths    = input.int(18, "Lookback (Months)", minval=1, maxval=120)
 
-// =====================
-// HTF DATA
-// =====================
+zz_depth          = input.int(8, "ZigZag Pivot Depth (bars)", minval=3)
+max_pivots_stored = input.int(200, "Max pivots stored", minval=20, maxval=2000)
+
+show_EW_in_dash   = input.bool(true, "Show EW & Fib in Dashboard")
+show_MTF_rows     = input.bool(true, "Show Multi-TF rows (D/W/M)")
+
+// EW thresholds (tuneable)
+min_retracement_w2 = input.float(0.30, "Min W2 retrace", step=0.01)
+max_retracement_w2 = input.float(0.90, "Max W2 retrace", step=0.01)
+min_ext_w3         = input.float(0.8, "Min W3 extension (ratio)", step=0.01)
+max_retracement_w4 = input.float(0.95, "Max W4 retracement ratio", step=0.01)
+
+// Decimal format for display (2 decimals)
+fmt = "#.##"
+
+// ==============================
+// HTF DATA (Base TF)
+// ==============================
 h = request.security(syminfo.tickerid, tf, high)
 l = request.security(syminfo.tickerid, tf, low)
 c = request.security(syminfo.tickerid, tf, close)
+o = request.security(syminfo.tickerid, tf, open)
 
-// =====================
-// BASE RANGE LEVELS (CORRECT + ORDERED)
-// =====================
-bars_lookback = lookbackMonths * 21
-range_high = ta.highest(h, bars_lookback)
-range_low  = ta.lowest(l, bars_lookback)
-range_mid  = (range_high + range_low) / 2.0
+// ==============================
+// LOOKBACK FILTER (X MONTHS -> ms & bars approximation)
+// ==============================
+ms_per_day = 24 * 60 * 60 * 1000
+lookback_ms = lookbackMonths * 30 * ms_per_day
+start_time = timenow - lookback_ms
+in_range = time >= start_time
 
-b1 = range_low + (range_mid - range_low) * 0.5
-b2 = range_mid
-b3 = range_mid + (range_high - range_mid) * 0.5
+// For ta.highest/lowest we approximate lookback in bars
+barsLookback = math.max(10, lookbackMonths * 21)  // ~21 trading days per month
 
-L1_disp = math.round(math.min(b1, math.min(b2, b3)), 2)
-L3_disp = math.round(math.max(b1, math.max(b2, b3)), 2)
-L2_disp = math.round((b1 + b2 + b3) - L1_disp - L3_disp, 2)
+// ==============================
+// PRIMARY RANGE (fallback formulas)
+// ==============================
+range_high  = ta.highest(in_range ? h : na, 5000)
+range_low   = ta.lowest(in_range ? l : na, 5000)
+range_close = c
 
-// =====================
-// ATR TREND (ORIGINAL 8–21–34 — UNCHANGED)
-// =====================
-ema8  = ta.ema(close, 8)
-ema21 = ta.ema(close, 21)
-ema34 = ta.ema(close, 34)
+// fallback primary key levels (kept for EW-found case)
+L1_base = math.round((range_high + range_low) / 2, 2)
+L2_base = math.round((range_high + range_close) / 2, 2)
+L3_base = math.round((range_low + range_close) / 2, 2)
 
-atr_bull = close >= ema8 and ema8 >= ema21 and ema21 >= ema34
-atr_bear = close <= ema8 and ema8 <= ema21 and ema21 <= ema34
-atr_chop = not atr_bull and not atr_bear
+hlDist = range_high - range_low
+T1_fb_base = math.round(range_close + hlDist * 0.25, 2)
+T2_fb_base = math.round(range_close + hlDist * 0.50, 2)
+T3_fb_base = math.round(range_close + hlDist * 0.75, 2)
 
-trendColor = atr_bull ? color.green : atr_bear ? color.red : color.orange
-trendDir   = atr_bull ? "BULL" : atr_bear ? "BEAR" : "CHOP"
-
-// Strength via EMA spread normalized by ATR
-atrLen   = 14
-atrVal   = ta.atr(atrLen)
-emaSpread = math.abs(ema8 - ema34) / atrVal
-
-trendType = atr_chop or emaSpread < 0.3 ? "CHOPPY" : emaSpread < 0.6 ? "NORMAL" : emaSpread < 1.0 ? "MOMENTUM" : "POWER"
-
-//Risk %
-riskPct = trendType == "CHOPPY" ? "Choppy/Range(0)": trendType == "NORMAL" ? "Weak Trend(2%)" : trendType == "MOMENTUM" ? "Clean Trend(3%)" : "Power / Breakout Day (0%)" 
-
-// =====================
-// ATR ENGINE (CALL / PUT — STABLE)
-// =====================
-atr_len   = input.int(14, "ATR Length")
-atr_mult  = input.float(0.236, "ATR Trigger %")
-
-atr_value = ta.atr(atr_len)
-
-atr_call_trigger = math.round(close + atr_value * atr_mult, 2)
-atr_put_trigger  = math.round(close - atr_value * atr_mult, 2)
-
-// =====================
-// TARGET ENGINE (EW + ATR AUTO SWITCH)
-// =====================
+// ==============================
+// ZIGZAG PIVOT COLLECTION (for EW detection)
+// ==============================
 ph = ta.pivothigh(high, zz_depth, zz_depth)
 pl = ta.pivotlow(low, zz_depth, zz_depth)
 
-range_val = not na(ph) and not na(pl) ? math.abs(ph - pl) : atr_value
+// chronological pivot arrays
+var float[] piv_time = array.new_float()
+var float[] piv_val  = array.new_float()
+var int[]   piv_hi   = array.new_int()  // 1 for high, 0 for low
 
-float T1 = na
-float T2 = na
-float T3 = na
+if not na(ph)
+    array.push(piv_time, time[zz_depth])
+    array.push(piv_val, ph)
+    array.push(piv_hi, 1)
+if not na(pl)
+    array.push(piv_time, time[zz_depth])
+    array.push(piv_val, pl)
+    array.push(piv_hi, 0)
 
-if atr_bull
-    T1 := math.round(close + range_val * 0.618, 2)
-    T2 := math.round(close + range_val * 1.000, 2)
-    T3 := math.round(close + range_val * 1.618, 2)
+// bound arrays
+while array.size(piv_time) > max_pivots_stored
+    array.shift(piv_time)
+    array.shift(piv_val)
+    array.shift(piv_hi)
 
-else if atr_bear
-    T1 := math.round(close - range_val * 0.618, 2)
-    T2 := math.round(close - range_val * 1.000, 2)
-    T3 := math.round(close - range_val * 1.618, 2)
+// safe getter
+safe_get(arr, i) =>
+    array.size(arr) > i ? array.get(arr, i) : na
 
-else
-    // CHOP → ATR ONLY
-    T1 := math.round(close + atr_value * 1.0, 2)
-    T2 := math.round(close + atr_value * 2.0, 2)
-    T3 := math.round(close + atr_value * 3.0, 2)
+// ==============================
+// ELLIOTT-WAVE-LIKE DETECTION
+// ==============================
+// Declare and initialize EW vars
+var float EW1 = na
+var float EW2 = na
+var float EW3 = na
+var float EW4 = na
+var float EW5 = na
+var bool  EW_found = false
+var string EW_dir = "NONE"
+var float EW_invalidation = na
+var float hard_invalid = na
 
-// =====================
-// DASHBOARD
-// =====================
-var table dashTbl = table.new(position.bottom_right, 1, 8)
+// reset per bar
+EW_found := false
+EW1 := na
+EW2 := na
+EW3 := na
+EW4 := na
+EW5 := na
+EW_dir := "NONE"
+EW_invalidation := na
+hard_invalid := na
 
-ready_text  = atr_chop ? "NO" : "YES"
-ready_color = atr_chop ? color.red : color.green
+pv_count = array.size(piv_val)
+if pv_count >= 5
+    start_idx = pv_count - 5
+    v0 = safe_get(piv_val, start_idx)
+    v1 = safe_get(piv_val, start_idx + 1)
+    v2 = safe_get(piv_val, start_idx + 2)
+    v3 = safe_get(piv_val, start_idx + 3)
+    v4 = safe_get(piv_val, start_idx + 4)
+    h0 = safe_get(piv_hi, start_idx)
+    h1 = safe_get(piv_hi, start_idx + 1)
+    h2 = safe_get(piv_hi, start_idx + 2)
+    h3 = safe_get(piv_hi, start_idx + 3)
+    h4 = safe_get(piv_hi, start_idx + 4)
+
+    upPattern   = (h0 == 0) and (h1 == 1) and (h2 == 0) and (h3 == 1) and (h4 == 0)
+    downPattern = (h0 == 1) and (h1 == 0) and (h2 == 1) and (h3 == 0) and (h4 == 1)
+
+    if upPattern
+        w1_low = v0
+        w1_high = v1
+        w2_low = v2
+        w3_high = v3
+        w4_low = v4
+
+        wave1_len = math.abs(w1_high - w1_low)
+        wave3_len = math.abs(w3_high - w2_low)
+        retr2 = (w1_high - w2_low) / (w1_high - w1_low + 0.0000001)
+        ext3 = wave3_len / (wave1_len + 0.0000001)
+
+        valid_w2 = retr2 >= min_retracement_w2 and retr2 <= max_retracement_w2
+        valid_w3 = ext3 >= min_ext_w3
+
+        if valid_w2 and valid_w3
+            EW1 := math.round(w1_high, 2)
+            EW2 := math.round(w2_low, 2)
+            EW3 := math.round(w3_high, 2)
+            EW4 := math.round(w4_low, 2)
+            EW5 := math.round(w4_low + (w1_high - w1_low) * 1.0, 2)
+            EW_found := true
+            EW_dir := "UP"
+            EW_invalidation := math.round(EW2, 2)
+
+    else if downPattern
+        w1_high = v0
+        w1_low  = v1
+        w2_high = v2
+        w3_low  = v3
+        w4_high = v4
+
+        wave1_len = math.abs(w1_high - w1_low)
+        wave3_len = math.abs(w3_low - w2_high)
+        retr2 = (w2_high - w1_low) / (w1_high - w1_low + 0.0000001)
+        ext3 = wave3_len / (wave1_len + 0.0000001)
+
+        valid_w2 = retr2 >= min_retracement_w2 and retr2 <= max_retracement_w2
+        valid_w3 = ext3 >= min_ext_w3
+
+        if valid_w2 and valid_w3
+            EW1 := math.round(w1_low, 2)
+            EW2 := math.round(w2_high, 2)
+            EW3 := math.round(w3_low, 2)
+            EW4 := math.round(w4_high, 2)
+            EW5 := math.round(w4_high - (w1_high - w1_low) * 1.0, 2)
+            EW_found := true
+            EW_dir := "DOWN"
+            EW_invalidation := math.round(EW2, 2)
+
+// ==============================
+// FIB RETRACE & EXT (from EW if found)
+// ==============================
+var float fib50 = na
+var float fib618 = na
+var float fib786 = na
+var float fib886 = na
+var float ext1272 = na
+var float ext1618 = na
+var float ext2000 = na
+
+if EW_found
+    if EW_dir == "UP"
+        swing_high = EW1
+        swing_low  = EW2
+        swing_range = swing_high - swing_low
+        fib50   := math.round(swing_high - swing_range * 0.5, 2)
+        fib618  := math.round(swing_high - swing_range * 0.618, 2)
+        fib786  := math.round(swing_high - swing_range * 0.786, 2)
+        fib886  := math.round(swing_high - swing_range * 0.886, 2)
+        ext1272 := math.round(swing_high + swing_range * 1.272, 2)
+        ext1618 := math.round(swing_high + swing_range * 1.618, 2)
+        ext2000 := math.round(swing_high + swing_range * 2.000, 2)
+    else
+        swing_low  = EW1
+        swing_high = EW2
+        swing_range = swing_high - swing_low
+        fib50   := math.round(swing_low + swing_range * 0.5, 2)
+        fib618  := math.round(swing_low + swing_range * 0.618, 2)
+        fib786  := math.round(swing_low + swing_range * 0.786, 2)
+        fib886  := math.round(swing_low + swing_range * 0.886, 2)
+        ext1272 := math.round(swing_low - swing_range * 1.272, 2)
+        ext1618 := math.round(swing_low - swing_range * 1.618, 2)
+        ext2000 := math.round(swing_low - swing_range * 2.000, 2)
+
+// ==============================
+// FALLBACK: Fibonacci Pivot S1 per TF (using previous completed period [1])
+// Pivot = (H + L + C) / 3 ; S1 = Pivot - (H - L) * 0.382
+// Use previous completed period values (index 1) to avoid in-progress period skew.
+// ==============================
+M_h = request.security(syminfo.tickerid, "M", high[1])
+M_l = request.security(syminfo.tickerid, "M", low[1])
+M_c = request.security(syminfo.tickerid, "M", close[1])
+pivot_M = (M_h + M_l + M_c) / 3.0
+M_S1 = math.round(pivot_M - (M_h - M_l) * 0.382, 2)
+
+W_h = request.security(syminfo.tickerid, "W", high[1])
+W_l = request.security(syminfo.tickerid, "W", low[1])
+W_c = request.security(syminfo.tickerid, "W", close[1])
+pivot_W = (W_h + W_l + W_c) / 3.0
+W_S1 = math.round(pivot_W - (W_h - W_l) * 0.382, 2)
+
+D_h = request.security(syminfo.tickerid, "D", high[1])
+D_l = request.security(syminfo.tickerid, "D", low[1])
+D_c = request.security(syminfo.tickerid, "D", close[1])
+pivot_D = (D_h + D_l + D_c) / 3.0
+D_S1 = math.round(pivot_D - (D_h - D_l) * 0.382, 2)
+
+// Fallback targets based on last close (user chosen)
+T1_fallback = math.round(c * 1.272, 2)
+T2_fallback = math.round(c * 1.618, 2)
+T3_fallback = math.round(c * 2.000, 2)
+
+// ==============================
+// FINAL DISPLAY LEVELS
+// If EW_found -> use base Ls (range-based) and EW ext for targets.
+// If EW NOT found -> use Fibonacci pivots (M/W/D S1) and fallback targets.
+// Then sort L1/L2/L3 ascending before display.
+// ==============================
+// declare finals so we can assign safely
+float final_L1 = na
+float final_L2 = na
+float final_L3 = na
+float final_T1 = na
+float final_T2 = na
+float final_T3 = na
+
+final_L1 := EW_found ? L1_base : M_S1
+final_L2 := EW_found ? L2_base : W_S1
+final_L3 := EW_found ? L3_base : D_S1
+
+final_T1 := EW_found and not na(ext1272) ? ext1272 : T1_fallback
+final_T2 := EW_found and not na(ext1618) ? ext1618 : T2_fallback
+final_T3 := EW_found and not na(ext2000) ? ext2000 : T3_fallback
+
+// Ensure no NaN: replace any na with reasonable fallback (last close)
+final_L1 := na(final_L1) ? math.round(c, 2) : final_L1
+final_L2 := na(final_L2) ? math.round(c, 2) : final_L2
+final_L3 := na(final_L3) ? math.round(c, 2) : final_L3
+
+// Sort ascending into display variables
+float L1_disp = na
+float L2_disp = na
+float L3_disp = na
+
+// create and populate array
+float[] lvls_arr = array.new_float(0)
+array.push(lvls_arr, final_L1)
+array.push(lvls_arr, final_L2)
+array.push(lvls_arr, final_L3)
+array.sort(lvls_arr, order.ascending)
+
+// assign sorted values
+L1_disp := array.get(lvls_arr, 0)
+L2_disp := array.get(lvls_arr, 1)
+L3_disp := array.get(lvls_arr, 2)
+
+// ==============================
+// TREND & PATTERNS (unchanged)
+// ==============================
+has_3_prior = bar_index >= 3
+bear_engulf = has_3_prior and open[2] < close[2] and close[1] < open[1] and open[1] >= close[2] and close[1] <= open[2]
+bull_engulf = has_3_prior and open[2] > close[2] and close[1] > open[1] and open[1] <= close[2] and close[1] >= open[2]
+
+hlDist1 = high[1] - low[1]
+hammer   = has_3_prior and (high[1] - math.max(open[1], close[1])) <= hlDist1 * 0.25 and (math.min(open[1], close[1]) - low[1]) >= hlDist1 * 0.50
+shooting = has_3_prior and (math.max(open[1], close[1]) - low[1]) <= hlDist1 * 0.25 and (high[1] - math.min(open[1], close[1])) >= hlDist1 * 0.50
+
+morning = has_3_prior and close[3] < open[3] and close[2] < open[2] and close[1] > (open[3] + close[3]) / 2
+evening = has_3_prior and close[3] > open[3] and close[2] > open[2] and close[1] < (open[3] + close[3]) / 2
+
+bull_pattern = bull_engulf or hammer or morning
+bear_pattern = bear_engulf or shooting or evening
+
+wick_retest_up(level) => low <= level and close > level and open > level
+normal_retest_up(level) => low <= level and close >= level
+retest_up(level) => use_wick_retest ? wick_retest_up(level) : normal_retest_up(level)
+
+near(x) => math.abs(c - x) <= buffer
+
+holds(level) =>
+    cond = true
+    for i = 0 to bars_hold - 1
+        cond := cond and c[i] >= level
+    cond
+
+break_up(level) => c > level and c[1] <= level
+
+hold_L1 = holds(L1_base)
+hold_L2 = holds(L2_base)
+hold_L3 = holds(L3_base)
+
+bk_L1 = break_up(L1_base)
+bk_L2 = break_up(L2_base)
+bk_L3 = break_up(L3_base)
+
+enter_L1 = bk_L1 and retest_up(L1_base) and hold_L1 and barstate.isconfirmed
+enter_L2 = bk_L2 and retest_up(L2_base) and hold_L2 and barstate.isconfirmed
+enter_L3 = bk_L3 and retest_up(L3_base) and hold_L3 and barstate.isconfirmed
+
+trendDir = c > o ? "BULLISH" : c < o ? "BEARISH" : "NEUTRAL"
+trendColor = c > o ? color.rgb(0,180,60) : c < o ? color.rgb(200,40,40) : color.rgb(255,165,0)
+
+ready_long  = (trendDir == "BULLISH" and c > L1_disp) or enter_L1 or enter_L2 or enter_L3 or (near(L1_disp) and bull_pattern)
+ready_short = (trendDir == "BEARISH" and c < L3_disp) or (near(L3_disp) and bear_pattern)
+ready_text  = ready_long ? "LONG READY" : ready_short ? "SHORT READY" : "WAIT"
+ready_color = ready_long ? color.rgb(0,180,60) : ready_short ? color.rgb(200,40,40) : color.rgb(255,165,0)
+
+// ==============================
+// ATR ENGINE (CLEAN — NO PLOTS)
+// Prefixes kept to avoid conflicts with your main variables.
+// ==============================
+
+// ATR inputs (prefixed)
+atr_trading_day     = 'Day'
+atr_trading_multiday= 'Multiday'
+atr_trading_swing   = 'Swing'
+atr_trading_position= 'Position'
+atr_trading_longterm= 'Long-term'
+atr_trading_type = input.string(atr_trading_day, 'ATR Trading Type', options=[atr_trading_day, atr_trading_multiday, atr_trading_swing, atr_trading_position, atr_trading_longterm])
+atr_use_options_labels = input.bool(true, 'ATR Use Options Labels')
+atr_length = input.int(14, 'ATR Length (ATR module)')
+atr_trigger_percentage = input.float(0.236, 'ATR Trigger Percentage')
+atr_use_current_close = input.bool(false, 'ATR Use Current Close')
+show_atr_info = input.bool(true, "Show ATR Info Table")
+
+// ATR timeframe resolver
+atr_tf_func() =>
+    tf_out = 'D'
+    if atr_trading_type == atr_trading_day
+        tf_out := 'D'
+    else if atr_trading_type == atr_trading_multiday
+        tf_out := 'W'
+    else if atr_trading_type == atr_trading_swing
+        tf_out := 'M'
+    else if atr_trading_type == atr_trading_position
+        tf_out := '3M'
+    else if atr_trading_type == atr_trading_longterm
+        tf_out := '12M'
+    tf_out
+
+
+// ATR Trend (8–21–34 EMA Ribbon) - prefixed names
+atr_price = close
+atr_fast_ema  = ta.ema(atr_price, 8)
+atr_pivot_ema = ta.ema(atr_price, 21)
+atr_slow_ema  = ta.ema(atr_price, 34)
+
+atr_bull = atr_price >= atr_fast_ema and atr_fast_ema >= atr_pivot_ema and atr_pivot_ema >= atr_slow_ema
+atr_bear = atr_price <= atr_fast_ema and atr_fast_ema <= atr_pivot_ema and atr_pivot_ema <= atr_slow_ema
+
+atr_trend_color = atr_bull ? color.green : atr_bear ? color.red : color.orange
+
+// Data (prefixed)
+atr_pidx = atr_use_current_close ? 0 : 1
+atr_sec  = ticker.new(syminfo.prefix, syminfo.ticker, session=session.extended)
+
+atr_prev_close = request.security(atr_sec, atr_tf_func(), close[atr_pidx], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+atr_value      = request.security(atr_sec, atr_tf_func(), ta.atr(atr_length)[atr_pidx], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+atr_period_high = request.security(atr_sec, atr_tf_func(), high, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+atr_period_low  = request.security(atr_sec, atr_tf_func(), low,  gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+atr_range = atr_period_high - atr_period_low
+atr_range_pct = atr_range / (atr_value == 0 ? 1 : atr_value) * 100
+
+// Trigger levels
+atr_call_trigger = math.round(atr_prev_close + atr_value * atr_trigger_percentage, 2)
+atr_put_trigger  = math.round(atr_prev_close - atr_value * atr_trigger_percentage, 2)
+
+
+// Option Label
+atr_long_label  = atr_use_options_labels ? "Calls" : "Long"
+atr_short_label = atr_use_options_labels ? "Puts"  : "Short"
+
+
+// ==============================
+// DASHBOARD (no Base Support row; shows T1/T2/T3 & MTF rows optional)
+// Note: table size increased by +2 rows to accommodate ATR summary
+// ==============================
+var table dashTbl = table.new(position.bottom_right, 1, 16, border_width=1)
 
 if barstate.islast
-    table.cell(dashTbl, 0, 0, syminfo.ticker + " | Key Levels",
-        text_color=color.white, bgcolor=color.rgb(255,140,0))
-    table.cell(dashTbl, 0, 1, "Ready: " + ready_text,
-        text_color=color.white, bgcolor=ready_color)
-    table.cell(dashTbl, 0, 2, "Trend: " + trendDir,
-        text_color=color.white, bgcolor=trendColor)
-    table.cell(dashTbl, 0, 3,
-        "Base L1/L2/L3: " +
-        str.tostring(L1_disp, fmt) + " / " +
-        str.tostring(L2_disp, fmt) + " / " +
-        str.tostring(L3_disp, fmt),
-        text_color=color.white, bgcolor=color.rgb(0,150,70))
-    table.cell(dashTbl, 0, 4,
-        "Targets T1/T2/T3: " +
-        str.tostring(T1, fmt) + " / " +
-        str.tostring(T2, fmt) + " / " +
-        str.tostring(T3, fmt),
-        text_color=color.white, bgcolor=color.rgb(0,120,200))
-    table.cell(dashTbl, 0, 5,
-        "ATR14: " + str.tostring(atr_value, fmt),
-        text_color=color.white, bgcolor=color.rgb(120,70,160))
-    table.cell(dashTbl, 0, 6,
-        "Calls > " + str.tostring(atr_call_trigger, fmt) +
-        " | Puts < " + str.tostring(atr_put_trigger, fmt),
-        text_color=color.white, bgcolor=color.rgb(120,70,160))
-    table.cell(dashTbl, 0, 7, "Risk: " + riskPct,
-        text_color=color.white, bgcolor=trendColor)
+    table.cell(dashTbl, 0, 0, syminfo.ticker + " | Key Levels", text_color=color.white, bgcolor=color.rgb(255,140,0))
+    table.cell(dashTbl, 0, 1, "Ready: " + ready_text, text_color=color.white, bgcolor=ready_color)
+    table.cell(dashTbl, 0, 2, "Trend: " + trendDir, text_color=color.white, bgcolor=trendColor)
+    table.cell(dashTbl, 0, 3, "Base L1/L2/L3: " + str.tostring(L1_disp, fmt) + " / " + str.tostring(L2_disp, fmt) + " / " + str.tostring(L3_disp, fmt), text_color=color.white, bgcolor=color.rgb(0,150,70))
+    // Targets row (shows EW ext if EW found, fallback otherwise)
+    srcTag = EW_found ? " (EW ext)" : " "
+    table.cell(dashTbl, 0, 4, "Targets T1/T2/T3" + srcTag + ": " + str.tostring(final_T1, fmt) + " / " + str.tostring(final_T2, fmt) + " / " + str.tostring(final_T3, fmt), text_color=color.white, bgcolor=color.rgb(0,120,200))
+
+    // ===========================
+    // ATR SUMMARY (inserted here)
+    // ===========================
+    atr_val_now  = atr_value  // prefetched ATR (timeframe from ATR module)
+    atr_pct_now  = atr_val_now / (c == 0 ? 1 : c) * 100
+    today_TR = math.round(high - low, 2)
+
+    atr_summary_txt =
+         "ATR14: " + str.tostring(atr_val_now, fmt) +
+         " | ATR%: " + str.tostring(atr_pct_now, "#.##") + "%" +
+         " | TR: " + str.tostring(today_TR, fmt)
+
+    atr_option_txt =
+         atr_long_label + " > " + str.tostring(atr_call_trigger, fmt) +
+         " | " + atr_short_label + " < " + str.tostring(atr_put_trigger, fmt)
+
+    table.cell(dashTbl, 0, 5, atr_summary_txt, text_color=color.white, bgcolor=color.rgb(120,70,160))
+    table.cell(dashTbl, 0, 6, atr_option_txt, text_color=color.white, bgcolor=color.rgb(120,70,160))
+    // EW & Fib box if found (optional)
+    if show_EW_in_dash
+        if EW_found
+            table.cell(dashTbl, 0, 7, "EW Dir: " + EW_dir + " | EW1:" + str.tostring(EW1, fmt) + " EW2:" + str.tostring(EW2, fmt) + " EW3:" + str.tostring(EW3, fmt), text_color=color.white, bgcolor=color.rgb(40,80,120))
+            table.cell(dashTbl, 0, 8, "Retrace box: 0.5=" + str.tostring(fib50, fmt) + " 0.618=" + str.tostring(fib618, fmt) + " 0.786=" + str.tostring(fib786, fmt) + " 0.886=" + str.tostring(fib886, fmt), text_color=color.white, bgcolor=color.rgb(20,60,120))
+            table.cell(dashTbl, 0, 9, "Ext targets: 1.272=" + str.tostring(ext1272, fmt) + " 1.618=" + str.tostring(ext1618, fmt) + " 2.0=" + str.tostring(ext2000, fmt), text_color=color.white, bgcolor=color.rgb(0,140,150))
+        else
+            table.cell(dashTbl, 0, 7, "EW: None detected", text_color=color.white, bgcolor=color.rgb(80,40,40))
+            table.cell(dashTbl, 0, 8, "Retrace box: N/A", text_color=color.white, bgcolor=color.rgb(178,190,181))
+            table.cell(dashTbl, 0, 9, "Ext targets: N/A", text_color=color.white, bgcolor=color.rgb(178,190,181))
+
+// ==============================
+// ALERT SYSTEM (unified) - unchanged (uses final levels where needed)
+// ==============================
+trigger = false
+msg = ""
+
+// Approach + pattern alerts (use display L1/L2/L3)
+if near(L1_disp) and bull_pattern
+    trigger := true
+    msg := "Approaching L1 w/ Pattern " + str.tostring(L1_disp, fmt)
+if near(L2_disp) and bull_pattern
+    trigger := true
+    msg := "Approaching L2 w/ Pattern " + str.tostring(L2_disp, fmt)
+if near(L3_disp) and bull_pattern
+    trigger := true
+    msg := "Approaching L3 w/ Pattern " + str.tostring(L3_disp, fmt)
+
+// Breakouts (base) — still using base Ls for breakout detection
+if ta.crossover(c, L1_base)
+    trigger := true
+    msg := "ENTRY Break L1 " + str.tostring(L1_base, fmt)
+if ta.crossover(c, L2_base)
+    trigger := true
+    msg := "ENTRY Break L2 " + str.tostring(L2_base, fmt)
+if ta.crossover(c, L3_base)
+    trigger := true
+    msg := "ENTRY Break L3 " + str.tostring(L3_base, fmt)
+
+// Advanced entries
+if enter_L1
+    trigger := true
+    msg := "ADV ENTRY Break+Retest+Hold L1 " + str.tostring(L1_base, fmt)
+if enter_L2
+    trigger := true
+    msg := "ADV ENTRY Break+Retest+Hold L2 " + str.tostring(L2_base, fmt)
+if enter_L3
+    trigger := true
+    msg := "ADV ENTRY Break+Retest+Hold L3 " + str.tostring(L3_base, fmt)
+
+// Targets (final targets)
+if c >= final_T1
+    trigger := true
+    msg := "TARGET 1 Hit " + str.tostring(final_T1, fmt)
+if c >= final_T2
+    trigger := true
+    msg := "TARGET 2 Hit " + str.tostring(final_T2, fmt)
+if c >= final_T3
+    trigger := true
+    msg := "TARGET 3 Hit " + str.tostring(final_T3, fmt)
+
+// EW invalidation
+if not na(EW_invalidation)
+    if (EW_dir == "UP" and c < EW_invalidation) or (EW_dir == "DOWN" and c > EW_invalidation)
+        trigger := true
+        msg := "EW invalidation level hit: " + str.tostring(EW_invalidation, fmt)
+
+// final alert
+if trigger
+    alert(msg, alert.freq_once_per_bar)
