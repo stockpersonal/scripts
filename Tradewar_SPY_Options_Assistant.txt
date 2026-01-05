@@ -1,23 +1,23 @@
 //@version=5
-indicator("Tradewar SPY Options Assistant", overlay=true)
+indicator("Tradewar SPY Options Assistant", overlay=true, max_labels_count=500)
 // ══════════════════════════════════════════════════════════════════════════════
 // SECTION 1: INPUTS
 // ══════════════════════════════════════════════════════════════════════════════
 // ─── CALL Options ───
 groupCall = "═══ SPY CALLS ═══"
 enableCall      = input.bool(true, "Enable CALL Alerts", group=groupCall, tooltip="Turn OFF if analyst didn't provide CALL levels today")
-callStrike      = input.float(686, "STRIKE ($)", group=groupCall, step=1)
+callStrike      = input.float(685, "STRIKE ($)", group=groupCall, step=1)
 callExp         = input.string("DEC-24-25", "EXP (e.g., DEC-24-25)", group=groupCall)
-callTargetPrice = input.float(689.5, "TARGET Price ($)", group=groupCall, step=0.01, tooltip="Final target price from analyst")
-callEntry       = input.float(688.21, "ENTRY: Breaks ($)", group=groupCall, step=0.01)
+callTargetPrice = input.float(687.5, "TARGET Price ($)", group=groupCall, step=0.01, tooltip="Final target price from analyst")
+callEntry       = input.float(686.18, "ENTRY: Breaks ($)", group=groupCall, step=0.01)
 
 // ─── PUT Options ───
 groupPut = "═══ SPY PUTS ═══"
 enablePut      = input.bool(true, "Enable PUT Alerts", group=groupPut, tooltip="Turn OFF if analyst didn't provide PUT levels today")
-putStrike      = input.float(684, "STRIKE ($)", group=groupPut, step=1)
+putStrike      = input.float(686, "STRIKE ($)", group=groupPut, step=1)
 putExp         = input.string("DEC-24-25", "EXP (e.g., DEC-24-25)", group=groupPut)
-putTargetPrice = input.float(681, "TARGET Price ($)", group=groupPut, step=0.01, tooltip="Final target price from analyst")
-putEntry       = input.float(683.5, "ENTRY: Loses ($)", group=groupPut, step=0.01)
+putTargetPrice = input.float(684.25, "TARGET Price ($)", group=groupPut, step=0.01, tooltip="Final target price from analyst")
+putEntry       = input.float(685.5, "ENTRY: Loses ($)", group=groupPut, step=0.01)
 
 // ─── Timing Settings ───
 groupSettings = "═══ SETTINGS ═══"
@@ -25,7 +25,7 @@ cooldownMin     = input.int(2, "Cooldown After Open (min)", group=groupSettings,
 lotoWindowEnd   = input.int(10, "LOTO Window End (min)", group=groupSettings, minval=3, maxval=15)
 confirmedStart  = input.int(5, "CONFIRMED Start (min)", group=groupSettings, minval=3, maxval=15)
 earlyAlertDist  = input.float(0.30, "Early Alert Distance ($)", group=groupSettings, minval=0.10, maxval=1.00, step=0.05)
-stopOffset      = input.float(0.15, "Stop Offset ($)", group=groupSettings, minval=0.05, maxval=1.00, step=0.05, tooltip="Distance below entry for stop loss")
+stopOffset      = input.float(0.5, "Stop Offset ($)", group=groupSettings, minval=0.05, maxval=1.00, step=0.05, tooltip="Distance below entry for stop loss")
 
 // ─── Trend Filter Settings ───
 useTrendFilter  = input.bool(true, "Trend Filter (One Direction)", group=groupSettings)
@@ -41,6 +41,11 @@ spikeMultiplier     = input.float(2.0, "Spike Threshold (x Avg Range)", group=gr
 useVolumeConfirm    = input.bool(true, "Require Volume Confirmation", group=groupProtection, tooltip="Volume > 1.2x of 20-bar average")
 volumeMultiplier    = input.float(1.2, "Volume Threshold (x Avg)", group=groupProtection, minval=1.0, maxval=3.0, step=0.1)
 useMiddayFilter     = input.bool(true, "Block Midday Chop (12:00-13:30 ET)", group=groupProtection, tooltip="No new trades during lunch hour")
+useHaltDetection    = input.bool(true, "Detect Halts (Bar Gap)", group=groupProtection, tooltip="Block entries after detected halts (3+ min gap)")
+haltGapThreshold    = input.int(3, "Halt Gap Threshold (min)", group=groupProtection, minval=2, maxval=10, tooltip="Minutes of bar gap to consider a halt")
+haltCooldownBars    = input.int(2, "Bars to Wait After Halt", group=groupProtection, minval=1, maxval=5, tooltip="Number of bars to wait after halt before entries")
+useFlatBarFilter    = input.bool(true, "Block Flat Bars (Bad Data)", group=groupProtection, tooltip="Block entries where high == low")
+entryCutoffMin      = input.int(10, "Entry Cutoff Before Close (min)", group=groupProtection, minval=5, maxval=30, tooltip="Block new entries within N minutes of close")
 
 // ─── Alert Preferences ───
 groupAlerts = "═══ ALERT PREFERENCES ═══"
@@ -48,6 +53,12 @@ showWarningAlerts    = input.bool(true, "Show Warning Alerts", group=groupAlerts
 showInfoAlerts       = input.bool(false, "Show Info Alerts", group=groupAlerts, tooltip="COOLDOWN END, LOTO CLOSED, AUTO RESET")
 showProtectionAlerts = input.bool(false, "Show Protection Alerts", group=groupAlerts, tooltip="SPIKE, LOW VOLUME, MIDDAY CHOP, SLIPPAGE")
 showSystemAlerts     = input.bool(false, "Show System Alerts", group=groupAlerts, tooltip="Timeframe warning")
+
+// ─── Visual Settings ───
+groupVisual = "═══ VISUAL SETTINGS ═══"
+showLabels          = input.bool(true, "Show Chart Labels", group=groupVisual, tooltip="Display visual labels on chart for entries, targets, and stops")
+showLabelsOnSPYOnly = input.bool(true, "Labels on SPY Chart Only", group=groupVisual, tooltip="Only show labels when viewing SPY chart")
+showLevelLines      = input.bool(true, "Show Entry/Target Lines", group=groupVisual, tooltip="Display horizontal lines for entry and target levels (SPY chart only)")
 
 // ══════════════════════════════════════════════════════════════════════════════
 // SECTION 2: TYPES
@@ -130,6 +141,13 @@ var bool volumeAlertFired   = false
 var bool middayAlertFired   = false
 var bool slippageAlertFired = false
 var bool tfWarningFired     = false
+var bool haltAlertFired     = false
+
+// ─── Halt Detection State ───
+var int lastAlertBar = na  // Persists last alerted bar (survives reloads)
+
+// ─── State Change Lock (prevent double transitions per bar) ───
+var bool stateChangedThisBar = false
 
 // ─── Price/Target Tracking (frozen at entry) ───
 var float callEntryPrice = na
@@ -177,8 +195,6 @@ bool evt_forceExit     = false
 bool evt_15MinWarning  = false
 bool evt_cooldownEnd   = false
 bool evt_lotoClosed    = false
-bool evt_callAutoReset = false
-bool evt_putAutoReset  = false
 
 // ─── Protection Events ───
 bool evt_spikeBlocked    = false
@@ -187,15 +203,20 @@ bool evt_middayBlocked   = false
 bool evt_callSlippage    = false
 bool evt_putSlippage     = false
 bool evt_tfWarning       = false
+bool evt_haltDetected    = false
 
 // ─── Alert Control ───
-// Prevent historical alert spam - only fire on live/current bar
-isLiveBar = barstate.isrealtime or barstate.islast
+// Prevent historical alert spam - only fire in real-time (not on replay/reload)
+isLiveBar = barstate.isrealtime
+// Note: barstate.isreplay may not be available in all environments
+// Workaround: detect replay as "not realtime AND not confirmed historical"
+isReplay = not barstate.isrealtime and not barstate.ishistory and bar_index > 1
 
 // One trade alert per bar (prevents T1 + STOP stacking)
 var bool tradeAlertFiredThisBar = false
 if barstate.isnew
     tradeAlertFiredThisBar := false
+    stateChangedThisBar := false  // Reset state lock each bar
 
 // ══════════════════════════════════════════════════════════════════════════════
 // SECTION 7: MARKET DATA
@@ -204,7 +225,7 @@ if barstate.isnew
 [m1Close, m1High, m1Low, m1Close1, m1EmaFast, m1EmaSlow, m1Vwap, m1CandleRange, m1AvgRange, m1Volume, m1VolAvg] = request.security(syminfo.tickerid, "1", [close, high, low, close[1], ta.ema(close, emaFastLen), ta.ema(close, emaSlowLen), ta.vwap, high - low, ta.sma(high - low, 20), volume, ta.sma(volume, 20)], lookahead=barmerge.lookahead_off)
 
 // 5-Minute data (for CONFIRMED trend)
-[m5EmaFast, m5EmaSlow, m5Vwap, m5Close] = request.security(syminfo.tickerid, "5", [ta.ema(close, emaFastLen), ta.ema(close, emaSlowLen), ta.vwap, close])
+[m5EmaFast, m5EmaSlow, m5Vwap, m5Close] = request.security(syminfo.tickerid, "5", [ta.ema(close, emaFastLen), ta.ema(close, emaSlowLen), ta.vwap, close], lookahead=barmerge.lookahead_off)
 
 // Price aliases
 priceNow  = m1Close
@@ -218,15 +239,13 @@ pricePrev = m1Close1
 // ─── Session Timing ───
 // Format session string ONCE (constants don't change)
 var string SESSION_STRING = str.format("{0,number,00}{1,number,00}-{2,number,00}{3,number,00}", MARKET_OPEN_HOUR, MARKET_OPEN_MIN, MARKET_CLOSE_HOUR, MARKET_CLOSE_MIN)
-currentHour      = hour(time, "America/New_York")
-currentMin       = minute(time, "America/New_York")
-minutesET        = currentHour * 60 + currentMin
+minutesET        = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
 isRTH            = not na(time(timeframe.period, SESSION_STRING, "America/New_York"))
 minutesSinceOpen = minutesET - MARKET_OPEN
 minutesToClose   = MARKET_CLOSE - minutesET
 
 // ─── DTE Calculation ───
-// Parse expiration ONCE (inputs don't change after script load)
+// Parse expiration ONCE (inputs don't change after script load) & Unified expiration clock: prefer CALL expiration if present
 var string expirationStr = str.length(callExp) > 0 ? callExp : putExp
 var float  expirationTs  = parseExp(expirationStr)
 // DTE must recalculate each bar (time changes)
@@ -247,8 +266,30 @@ isExit15MinWarning = (is0DTE or is1DTE) and minutesToClose <= EXIT_WARNING_MIN a
 
 // ─── Filters ───
 isSpike      = useSpikeFilter and not na(m1AvgRange) and m1CandleRange > m1AvgRange * spikeMultiplier
-volumeOK     = not useVolumeConfirm or (not na(m1VolAvg) and m1Volume > m1VolAvg * volumeMultiplier)
+// Volume filter: skip check in first 20 bars (insufficient average data)
+volumeOK     = not useVolumeConfirm or (bar_index > 20 and not na(m1VolAvg) and m1Volume > m1VolAvg * volumeMultiplier)
 inMiddayChop = useMiddayFilter and minutesET >= MIDDAY_START and minutesET < MIDDAY_END
+
+// ─── Halt Detection (bar gap inference) ───
+// Note: Require isRTH[1] to prevent false-trigger at session open (9:30 gap from pre-market)
+// barstate.isconfirmed prevents false-trigger on chart reload where time[1] could jump
+// bar_index > 10 provides startup buffer for early bars
+haltGapMinutes = barstate.isconfirmed ? (time - time[1]) / 60000 : 0
+isPossibleHalt = useHaltDetection and haltGapMinutes >= haltGapThreshold and isRTH and isRTH[1] and bar_index > 10
+barsSinceHalt  = ta.barssince(isPossibleHalt)
+inHaltCooldown = useHaltDetection and not na(barsSinceHalt) and barsSinceHalt <= haltCooldownBars
+
+// ─── Flat Bar Filter (bad data detection) ───
+isFlatBar = useFlatBarFilter and priceHigh == priceLow
+
+// ─── Entry Cutoff Time (hard block before close) ───
+canEnterTime = minutesToClose > entryCutoffMin
+
+// ─── Cooldown Just Ended (require 1 bar after cooldown) ───
+cooldownJustEnded = minutesSinceOpen == cooldownMin and minutesSinceOpen[1] < cooldownMin
+
+// ─── Base Entry Filters (shared between CALL/PUT to reduce duplication) ───
+baseEntryFilters = isRTH and not isExpired and not isSpike and volumeOK and not inMiddayChop and not forceExit and not isPossibleHalt and not inHaltCooldown and not isFlatBar and canEnterTime and not cooldownJustEnded
 
 // ══════════════════════════════════════════════════════════════════════════════
 // SECTION 9: TREND DETECTION
@@ -304,21 +345,25 @@ callBreakOrGap = callBreak or callGapThrough or (callGapPending and priceNow >= 
 putBreakOrGap  = putBreak or putGapThrough or (putGapPending and priceNow <= putEntry)
 
 // ─── Entry Condition Calculations ───
-callCanEnter       = callBreakOrGap and isRTH and not isExpired and not isSpike and volumeOK and not inMiddayChop and priceNow <= callEntry + MAX_ENTRY_SLIPPAGE and not forceExit and (directionLockedToday == "" or directionLockedToday == "CALL")
-callLotoReady      = callCanEnter and lotoWindowOK and callLotoAllowed and not callHadTrade
+// Core entry conditions using shared baseEntryFilters + direction-specific checks
+callCanEnter       = callBreakOrGap and baseEntryFilters and priceNow <= callEntry + MAX_ENTRY_SLIPPAGE and (directionLockedToday == "" or directionLockedToday == "CALL")
+callLotoReady      = callCanEnter and lotoWindowOK and callLotoAllowed
 callConfirmedReady = callCanEnter and confirmedOK and callConfirmedAllowed
-callReadyToEnter   = (callState == TradeState.IDLE or callState == TradeState.EARLY) and (callLotoReady or callConfirmedReady)
-callEntryType      = callLotoReady ? "LOTO" : "CONFIRMED"
+callReadyToEnter   = (callState == TradeState.IDLE or callState == TradeState.EARLY) and (callLotoReady or callConfirmedReady) and not isReplay
+callEntryType      = callLotoReady ? "LOTO" : callConfirmedReady ? "CONFIRMED" : ""
 
-putCanEnter       = putBreakOrGap and isRTH and not isExpired and not isSpike and volumeOK and not inMiddayChop and priceNow >= putEntry - MAX_ENTRY_SLIPPAGE and not forceExit and (directionLockedToday == "" or directionLockedToday == "PUT")
-putLotoReady      = putCanEnter and lotoWindowOK and putLotoAllowed and not putHadTrade
+putCanEnter       = putBreakOrGap and baseEntryFilters and priceNow >= putEntry - MAX_ENTRY_SLIPPAGE and (directionLockedToday == "" or directionLockedToday == "PUT")
+putLotoReady      = putCanEnter and lotoWindowOK and putLotoAllowed
 putConfirmedReady = putCanEnter and confirmedOK and putConfirmedAllowed
-putReadyToEnter   = (putState == TradeState.IDLE or putState == TradeState.EARLY) and (putLotoReady or putConfirmedReady)
-putEntryType      = putLotoReady ? "LOTO" : "CONFIRMED"
+putReadyToEnter   = (putState == TradeState.IDLE or putState == TradeState.EARLY) and (putLotoReady or putConfirmedReady) and not isReplay
+putEntryType      = putLotoReady ? "LOTO" : putConfirmedReady ? "CONFIRMED" : ""
 
 // ─── Slippage Block Detection ───
-callSlippageBlocked = callBreakOrGap and isRTH and not isExpired and not isSpike and volumeOK and not inMiddayChop and not forceExit and priceNow > callEntry + MAX_ENTRY_SLIPPAGE and (callState == TradeState.IDLE or callState == TradeState.EARLY)
-putSlippageBlocked  = putBreakOrGap and isRTH and not isExpired and not isSpike and volumeOK and not inMiddayChop and not forceExit and priceNow < putEntry - MAX_ENTRY_SLIPPAGE and (putState == TradeState.IDLE or putState == TradeState.EARLY)
+// Only trigger slippage alert when price is beyond slippage threshold (not other filters)
+// Uses baseEntryFilters (minus cooldownJustEnded check) + trend filter to avoid misleading alerts
+baseSlippageFilters = isRTH and not isExpired and not isSpike and volumeOK and not inMiddayChop and not forceExit and not isPossibleHalt and not inHaltCooldown and not isFlatBar and canEnterTime
+callSlippageBlocked = callBreakOrGap and baseSlippageFilters and priceNow > callEntry + MAX_ENTRY_SLIPPAGE and (callState == TradeState.IDLE or callState == TradeState.EARLY) and (not useTrendFilter or confirmedUptrend)
+putSlippageBlocked  = putBreakOrGap and baseSlippageFilters and priceNow < putEntry - MAX_ENTRY_SLIPPAGE and (putState == TradeState.IDLE or putState == TradeState.EARLY) and (not useTrendFilter or confirmedDowntrend)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // SECTION 11: STATE MACHINE LOGIC (Pure state changes, no alerts)
@@ -353,8 +398,8 @@ if callReadyToEnter
     callState := TradeState.IN_TRADE
     evt_callEntry := true
 
-// IN_TRADE → Target Progression
-if callState == TradeState.IN_TRADE and bar_index > callEntryBar
+// IN_TRADE → Target Progression (with state lock to prevent double exits)
+if callState == TradeState.IN_TRADE and bar_index > callEntryBar and not stateChangedThisBar
     // T1 Hit (33%)
     if not callT1Hit and not na(callT1Final) and priceHigh >= callT1Final
         callT1Hit := true
@@ -369,11 +414,13 @@ if callState == TradeState.IN_TRADE and bar_index > callEntryBar
     if callT2Hit and not na(callT3Final) and priceHigh >= callT3Final
         callState := TradeState.EXITED
         evt_callT3 := true
+        stateChangedThisBar := true
 
-// IN_TRADE → STOP (gated by not T2Hit)
-if callState == TradeState.IN_TRADE and bar_index > callEntryBar and not callT2Hit and not na(callStopPrice) and priceLow <= callStopPrice
+// IN_TRADE → STOP (gated by not T2Hit and state lock)
+if callState == TradeState.IN_TRADE and bar_index > callEntryBar and not callT2Hit and not na(callStopPrice) and priceLow <= callStopPrice and not stateChangedThisBar
     callState := TradeState.EXITED
     evt_callStop := true
+    stateChangedThisBar := true
 
 // EXITED → IDLE (state only - preserve data for alerts, allow EARLY again)
 // Data is overwritten on next entry or cleared on daily reset
@@ -417,8 +464,8 @@ if putReadyToEnter
     putState := TradeState.IN_TRADE
     evt_putEntry := true
 
-// IN_TRADE → Target Progression
-if putState == TradeState.IN_TRADE and bar_index > putEntryBar
+// IN_TRADE → Target Progression (with state lock to prevent double exits)
+if putState == TradeState.IN_TRADE and bar_index > putEntryBar and not stateChangedThisBar
     // T1 Hit (33%)
     if not putT1Hit and not na(putT1Final) and priceLow <= putT1Final
         putT1Hit := true
@@ -433,11 +480,13 @@ if putState == TradeState.IN_TRADE and bar_index > putEntryBar
     if putT2Hit and not na(putT3Final) and priceLow <= putT3Final
         putState := TradeState.EXITED
         evt_putT3 := true
+        stateChangedThisBar := true
 
-// IN_TRADE → STOP (gated by not T2Hit)
-if putState == TradeState.IN_TRADE and bar_index > putEntryBar and not putT2Hit and not na(putStopPrice) and priceHigh >= putStopPrice
+// IN_TRADE → STOP (gated by not T2Hit and state lock)
+if putState == TradeState.IN_TRADE and bar_index > putEntryBar and not putT2Hit and not na(putStopPrice) and priceHigh >= putStopPrice and not stateChangedThisBar
     putState := TradeState.EXITED
     evt_putStop := true
+    stateChangedThisBar := true
 
 // EXITED → IDLE (state only - preserve data for alerts, allow EARLY again)
 // Data is overwritten on next entry or cleared on daily reset
@@ -466,8 +515,8 @@ if forceExit and not forceExit[1] and (callState == TradeState.IN_TRADE or putSt
 if isExit15MinWarning and not isExit15MinWarning[1] and (callState == TradeState.IN_TRADE or putState == TradeState.IN_TRADE)
     evt_15MinWarning := true
 
-// Cooldown End
-if minutesSinceOpen == cooldownMin and minutesSinceOpen[1] < cooldownMin
+// Cooldown End (reuse cooldownJustEnded from SECTION 8)
+if cooldownJustEnded
     evt_cooldownEnd := true
 
 // LOTO Window Closed
@@ -496,10 +545,14 @@ if putSlippageBlocked and barstate.isconfirmed and not slippageAlertFired
     slippageAlertFired := true
 
 // Timeframe Warning (fires once if not on 1-min chart)
-isNot1Min = timeframe.period != "1"
-if isNot1Min and not tfWarningFired and barstate.islast
+if timeframe.period != "1" and not tfWarningFired and barstate.islast
     evt_tfWarning := true
     tfWarningFired := true
+
+// Halt Detection Alert (once per day)
+if isPossibleHalt and not haltAlertFired and isRTH
+    evt_haltDetected := true
+    haltAlertFired := true
 
 // ══════════════════════════════════════════════════════════════════════════════
 // SECTION 12: ALERT DISPATCH (All alerts in one place)
@@ -516,7 +569,10 @@ if evt_callEarly and isLiveBar
     alert("[EARLY] CALL SPY | $" + str.tostring(callStrike, "#") + "C " + callExp + " | Price $" + str.tostring(priceNow, "#.##") + " | Approaching $" + str.tostring(callEntry, "#.##"), alert.freq_once_per_bar)
 
 // Trade alerts (FIRST trade: LOTO allowed | Re-entry: CONFIRMED only)
-if evt_callEntry and isLiveBar and not tradeAlertFiredThisBar
+// lastAlertBar persistence prevents duplicate alerts on reload mid-bar
+canFireTradeAlert = bar_index != lastAlertBar
+
+if evt_callEntry and isLiveBar and not tradeAlertFiredThisBar and canFireTradeAlert
     // Defensive gate: only allow LOTO on first trade (callHadTrade[1] was false before entry set it true)
     if callEntryMode == "CONFIRMED" or not callHadTrade[1]
         callAlertMsg = "[" + callEntryMode + "] CALL SPY | $" + str.tostring(callStrike, "#") + "C " + callExp + " | Entry $" + str.tostring(callEntryPrice, "#.##") + " | Stop $" + str.tostring(callStopPrice, "#.##") + " | T1 $" + str.tostring(callT1Final, "#.##") + " | T2 $" + str.tostring(callT2Final, "#.##") + " | T3 $" + str.tostring(callT3Final, "#.##")
@@ -525,22 +581,27 @@ if evt_callEntry and isLiveBar and not tradeAlertFiredThisBar
         else
             alert(callAlertMsg, alert.freq_once_per_bar_close)
         tradeAlertFiredThisBar := true
+        lastAlertBar := bar_index
 
-if evt_callT1 and isLiveBar and not tradeAlertFiredThisBar
+if evt_callT1 and isLiveBar and not tradeAlertFiredThisBar and canFireTradeAlert
     alert("[T1 HIT] CALL SPY | $" + str.tostring(callStrike, "#") + "C " + callExp + " | Hit $" + str.tostring(callT1Final, "#.##") + " | Next T2 $" + str.tostring(callT2Final, "#.##"), alert.freq_once_per_bar)
     tradeAlertFiredThisBar := true
+    lastAlertBar := bar_index
 
-if evt_callT2 and isLiveBar and not tradeAlertFiredThisBar
+if evt_callT2 and isLiveBar and not tradeAlertFiredThisBar and canFireTradeAlert
     alert("[T2 HIT] CALL SPY | $" + str.tostring(callStrike, "#") + "C " + callExp + " | Hit $" + str.tostring(callT2Final, "#.##") + " | Final T3 $" + str.tostring(callT3Final, "#.##"), alert.freq_once_per_bar)
     tradeAlertFiredThisBar := true
+    lastAlertBar := bar_index
 
-if evt_callT3 and isLiveBar and not tradeAlertFiredThisBar
+if evt_callT3 and isLiveBar and not tradeAlertFiredThisBar and canFireTradeAlert
     alert("[TARGET] CALL SPY | $" + str.tostring(callStrike, "#") + "C " + callExp + " | Hit $" + str.tostring(callT3Final, "#.##") + " | CLOSE POSITION | Mode: " + callEntryMode, alert.freq_once_per_bar)
     tradeAlertFiredThisBar := true
+    lastAlertBar := bar_index
 
-if evt_callStop and isLiveBar and not tradeAlertFiredThisBar
+if evt_callStop and isLiveBar and not tradeAlertFiredThisBar and canFireTradeAlert
     alert("[STOP] CALL SPY | $" + str.tostring(callStrike, "#") + "C " + callExp + " | Stopped $" + str.tostring(callStopPrice, "#.##") + " | Mode: " + callEntryMode, alert.freq_once_per_bar)
     tradeAlertFiredThisBar := true
+    lastAlertBar := bar_index
 
 // Protection alerts (optional)
 if evt_callSlippage and isLiveBar and showProtectionAlerts
@@ -558,7 +619,7 @@ if evt_putEarly and isLiveBar
     alert("[EARLY] PUT SPY | $" + str.tostring(putStrike, "#") + "P " + putExp + " | Price $" + str.tostring(priceNow, "#.##") + " | Approaching $" + str.tostring(putEntry, "#.##"), alert.freq_once_per_bar)
 
 // Trade alerts (FIRST trade: LOTO allowed | Re-entry: CONFIRMED only)
-if evt_putEntry and isLiveBar and not tradeAlertFiredThisBar
+if evt_putEntry and isLiveBar and not tradeAlertFiredThisBar and canFireTradeAlert
     // Defensive gate: only allow LOTO on first trade (putHadTrade[1] was false before entry set it true)
     if putEntryMode == "CONFIRMED" or not putHadTrade[1]
         putAlertMsg = "[" + putEntryMode + "] PUT SPY | $" + str.tostring(putStrike, "#") + "P " + putExp + " | Entry $" + str.tostring(putEntryPrice, "#.##") + " | Stop $" + str.tostring(putStopPrice, "#.##") + " | T1 $" + str.tostring(putT1Final, "#.##") + " | T2 $" + str.tostring(putT2Final, "#.##") + " | T3 $" + str.tostring(putT3Final, "#.##")
@@ -567,22 +628,27 @@ if evt_putEntry and isLiveBar and not tradeAlertFiredThisBar
         else
             alert(putAlertMsg, alert.freq_once_per_bar_close)
         tradeAlertFiredThisBar := true
+        lastAlertBar := bar_index
 
-if evt_putT1 and isLiveBar and not tradeAlertFiredThisBar
+if evt_putT1 and isLiveBar and not tradeAlertFiredThisBar and canFireTradeAlert
     alert("[T1 HIT] PUT SPY | $" + str.tostring(putStrike, "#") + "P " + putExp + " | Hit $" + str.tostring(putT1Final, "#.##") + " | Next T2 $" + str.tostring(putT2Final, "#.##"), alert.freq_once_per_bar)
     tradeAlertFiredThisBar := true
+    lastAlertBar := bar_index
 
-if evt_putT2 and isLiveBar and not tradeAlertFiredThisBar
+if evt_putT2 and isLiveBar and not tradeAlertFiredThisBar and canFireTradeAlert
     alert("[T2 HIT] PUT SPY | $" + str.tostring(putStrike, "#") + "P " + putExp + " | Hit $" + str.tostring(putT2Final, "#.##") + " | Final T3 $" + str.tostring(putT3Final, "#.##"), alert.freq_once_per_bar)
     tradeAlertFiredThisBar := true
+    lastAlertBar := bar_index
 
-if evt_putT3 and isLiveBar and not tradeAlertFiredThisBar
+if evt_putT3 and isLiveBar and not tradeAlertFiredThisBar and canFireTradeAlert
     alert("[TARGET] PUT SPY | $" + str.tostring(putStrike, "#") + "P " + putExp + " | Hit $" + str.tostring(putT3Final, "#.##") + " | CLOSE POSITION | Mode: " + putEntryMode, alert.freq_once_per_bar)
     tradeAlertFiredThisBar := true
+    lastAlertBar := bar_index
 
-if evt_putStop and isLiveBar and not tradeAlertFiredThisBar
+if evt_putStop and isLiveBar and not tradeAlertFiredThisBar and canFireTradeAlert
     alert("[STOP] PUT SPY | $" + str.tostring(putStrike, "#") + "P " + putExp + " | Stopped $" + str.tostring(putStopPrice, "#.##") + " | Mode: " + putEntryMode, alert.freq_once_per_bar)
     tradeAlertFiredThisBar := true
+    lastAlertBar := bar_index
 
 // Protection alerts (optional)
 if evt_putSlippage and isLiveBar and showProtectionAlerts
@@ -621,15 +687,100 @@ if evt_middayBlocked and isLiveBar and showProtectionAlerts
 if evt_tfWarning and isLiveBar and showSystemAlerts
     alert("[WARNING] SPY | Chart is not 1-min. Time-based alerts may be delayed.", alert.freq_once_per_bar)
 
+// Halt detection alert (warning category)
+if evt_haltDetected and isLiveBar and showWarningAlerts
+    alert("[HALT DETECTED] SPY | Bar gap " + str.tostring(haltGapMinutes, "#") + " min | Entries blocked for " + str.tostring(haltCooldownBars) + " bars", alert.freq_once_per_bar)
+
 // ══════════════════════════════════════════════════════════════════════════════
-// SECTION 13: DAILY RESET
+// SECTION 13: LABEL DISPATCH (Visual labels on chart)
+// ══════════════════════════════════════════════════════════════════════════════
+// Label display condition
+isSPY = str.upper(syminfo.ticker) == "SPY"
+canShowLabels = showLabels and (not showLabelsOnSPYOnly or isSPY)
+
+// Label throttling to avoid hitting max_labels_count
+// Separate throttles per direction to avoid CALL suppressing PUT or vice versa
+throttleCallEarly = bar_index % 2 == 0
+throttlePutEarly  = bar_index % 2 == 1
+
+// Global label guard - soft cap at 450 to leave headroom
+canCreateLabel = label.all.size() < 450
+
+// ─── CALL LABELS ───
+if evt_callEarly and canShowLabels and canCreateLabel and throttleCallEarly
+    label.new(bar_index, priceHigh, "EARLY", style=label.style_label_down, color=color.new(color.yellow, 20), textcolor=color.black, size=size.small, tooltip="EARLY CALL $" + str.tostring(callStrike, "#") + "C | Approaching $" + str.tostring(callEntry, "#.##"))
+
+if evt_callEntry and canShowLabels and canCreateLabel
+    if callEntryMode == "CONFIRMED" or not callHadTrade[1]
+        lblText = callEntryMode == "LOTO" ? "LOTO" : "CALL"
+        lblColor = callEntryMode == "LOTO" ? color.new(color.orange, 0) : color.new(color.green, 0)
+        label.new(bar_index, priceLow, lblText, style=label.style_label_up, color=lblColor, textcolor=color.white, size=size.small, tooltip="[" + callEntryMode + "] CALL $" + str.tostring(callStrike, "#") + "C | Entry $" + str.tostring(callEntryPrice, "#.##") + " | Stop $" + str.tostring(callStopPrice, "#.##") + " | T1 $" + str.tostring(callT1Final, "#.##") + " | T2 $" + str.tostring(callT2Final, "#.##") + " | T3 $" + str.tostring(callT3Final, "#.##"))
+
+if evt_callT1 and canShowLabels and canCreateLabel
+    label.new(bar_index, priceHigh, "T1", style=label.style_label_down, color=color.new(color.blue, 20), textcolor=color.white, size=size.small, tooltip="T1 HIT CALL | $" + str.tostring(callT1Final, "#.##"))
+
+if evt_callT2 and canShowLabels and canCreateLabel
+    label.new(bar_index, priceHigh, "T2", style=label.style_label_down, color=color.new(color.blue, 0), textcolor=color.white, size=size.small, tooltip="T2 HIT CALL | $" + str.tostring(callT2Final, "#.##"))
+
+if evt_callT3 and canShowLabels and canCreateLabel
+    label.new(bar_index, priceHigh, "TARGET", style=label.style_label_down, color=color.new(color.green, 0), textcolor=color.white, size=size.small, tooltip="TARGET CALL $" + str.tostring(callStrike, "#") + "C | $" + str.tostring(callT3Final, "#.##") + " | CLOSE")
+
+if evt_callStop and canShowLabels and canCreateLabel
+    label.new(bar_index, priceLow, "STOP", style=label.style_label_up, color=color.new(color.red, 0), textcolor=color.white, size=size.small, tooltip="STOP CALL $" + str.tostring(callStrike, "#") + "C | $" + str.tostring(callStopPrice, "#.##"))
+
+// ─── PUT LABELS ───
+if evt_putEarly and canShowLabels and canCreateLabel and throttlePutEarly
+    label.new(bar_index, priceLow, "EARLY", style=label.style_label_up, color=color.new(color.yellow, 20), textcolor=color.black, size=size.small, tooltip="EARLY PUT $" + str.tostring(putStrike, "#") + "P | Approaching $" + str.tostring(putEntry, "#.##"))
+
+if evt_putEntry and canShowLabels and canCreateLabel
+    if putEntryMode == "CONFIRMED" or not putHadTrade[1]
+        lblText = putEntryMode == "LOTO" ? "LOTO" : "PUT"
+        lblColor = putEntryMode == "LOTO" ? color.new(color.orange, 0) : color.new(color.red, 20)
+        label.new(bar_index, priceHigh, lblText, style=label.style_label_down, color=lblColor, textcolor=color.white, size=size.small, tooltip="[" + putEntryMode + "] PUT $" + str.tostring(putStrike, "#") + "P | Entry $" + str.tostring(putEntryPrice, "#.##") + " | Stop $" + str.tostring(putStopPrice, "#.##") + " | T1 $" + str.tostring(putT1Final, "#.##") + " | T2 $" + str.tostring(putT2Final, "#.##") + " | T3 $" + str.tostring(putT3Final, "#.##"))
+
+if evt_putT1 and canShowLabels and canCreateLabel
+    label.new(bar_index, priceLow, "T1", style=label.style_label_up, color=color.new(color.blue, 20), textcolor=color.white, size=size.small, tooltip="T1 HIT PUT | $" + str.tostring(putT1Final, "#.##"))
+
+if evt_putT2 and canShowLabels and canCreateLabel
+    label.new(bar_index, priceLow, "T2", style=label.style_label_up, color=color.new(color.blue, 0), textcolor=color.white, size=size.small, tooltip="T2 HIT PUT | $" + str.tostring(putT2Final, "#.##"))
+
+if evt_putT3 and canShowLabels and canCreateLabel
+    label.new(bar_index, priceLow, "TARGET", style=label.style_label_up, color=color.new(color.green, 0), textcolor=color.white, size=size.small, tooltip="TARGET PUT $" + str.tostring(putStrike, "#") + "P | $" + str.tostring(putT3Final, "#.##") + " | CLOSE")
+
+if evt_putStop and canShowLabels and canCreateLabel
+    label.new(bar_index, priceHigh, "STOP", style=label.style_label_down, color=color.new(color.red, 0), textcolor=color.white, size=size.small, tooltip="STOP PUT $" + str.tostring(putStrike, "#") + "P | $" + str.tostring(putStopPrice, "#.##"))
+
+// ─── SYSTEM LABELS ───
+if evt_forceExit and canShowLabels and canCreateLabel
+    label.new(bar_index, priceHigh, "EXIT", style=label.style_label_down, color=color.new(color.purple, 0), textcolor=color.white, size=size.small, tooltip="FORCE EXIT | Market Closing")
+
+// ─── REPLAY MODE WARNING LABEL ───
+// Prevents false confidence during replay mode
+if isReplay and barstate.islast and canShowLabels and canCreateLabel
+    label.new(bar_index, priceHigh + (priceHigh - priceLow) * 0.5, "⚠️ REPLAY MODE", style=label.style_label_down, color=color.new(color.gray, 0), textcolor=color.white, size=size.normal, tooltip="Replay mode detected. State transitions are frozen. Alerts will not fire.")
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SECTION 14: LEVEL LINES (Entry and Target horizontal lines using plot)
+// ══════════════════════════════════════════════════════════════════════════════
+// Conditions for showing lines (only on SPY chart)
+showCallLines = showLevelLines and isSPY and enableCall and callEntry > 0
+showPutLines  = showLevelLines and isSPY and enablePut and putEntry > 0
+
+// CALL Lines (green) - Entry dashed, Target solid
+plot(showCallLines ? callEntry : na, "CALL Entry", color=color.new(color.green, 40), linewidth=2, style=plot.style_linebr)
+plot(showCallLines ? callTargetPrice : na, "CALL Target", color=color.new(color.green, 0), linewidth=2, style=plot.style_linebr)
+
+// PUT Lines (red) - Entry dashed, Target solid
+plot(showPutLines ? putEntry : na, "PUT Entry", color=color.new(color.red, 40), linewidth=2, style=plot.style_linebr)
+plot(showPutLines ? putTargetPrice : na, "PUT Target", color=color.new(color.red, 0), linewidth=2, style=plot.style_linebr)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SECTION 15: DAILY RESET
 // ══════════════════════════════════════════════════════════════════════════════
 if ta.change(time("D", "America/New_York")) != 0
-    // Check for open positions before reset
-    if callState == TradeState.IN_TRADE
-        evt_callAutoReset := true
-    if putState == TradeState.IN_TRADE
-        evt_putAutoReset := true
+    // Check for open positions before reset - treat as force exit for visibility
+    if callState == TradeState.IN_TRADE or putState == TradeState.IN_TRADE
+        evt_forceExit := true  // Visible exit (not silent auto reset)
 
     // Reset CALL state
     callState      := TradeState.IDLE
@@ -668,10 +819,5 @@ if ta.change(time("D", "America/New_York")) != 0
     middayAlertFired := false
     slippageAlertFired := false
     tfWarningFired := false
-
-// Auto Reset Alerts (info category - optional)
-if evt_callAutoReset and isLiveBar and showInfoAlerts
-    alert("[AUTO RESET] CALL SPY | $" + str.tostring(callStrike, "#") + "C " + callExp + " | Trade reset at new session", alert.freq_once_per_bar)
-
-if evt_putAutoReset and isLiveBar and showInfoAlerts
-    alert("[AUTO RESET] PUT SPY | $" + str.tostring(putStrike, "#") + "P " + putExp + " | Trade reset at new session", alert.freq_once_per_bar)
+    haltAlertFired := false
+    lastAlertBar := na  // Reset alert bar tracking for new day
