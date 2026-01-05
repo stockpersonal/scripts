@@ -6,47 +6,47 @@ indicator("Tradewar Options Assistant Multiple", overlay=true, dynamic_requests=
 // ─── Ticker 1 ───
 group1 = "═══ TICKER 1 ═══"
 t1_on   = input.bool(true, "Enable", group=group1)
-t1_sym  = input.string("TSLA", "Symbol", group=group1)
-t1_k    = input.float(455, "Strike ($)", group=group1, step=1)
-t1_exp  = input.string("JAN-02-26", "Expiry", group=group1)
-t1_tgt  = input.float(462.5, "Target Price ($)", group=group1, step=0.01, tooltip="Final target price (T3) - script calculates T1/T2 automatically")
-t1_res  = input.float(457.5, "Entry: Breaks ($)", group=group1, step=0.01)
+t1_sym  = input.string("INTC", "Symbol", group=group1)
+t1_k    = input.float(41.5, "Strike ($)", group=group1, step=1)
+t1_exp  = input.string("JAN-09-26", "Expiry", group=group1)
+t1_tgt  = input.float(42.5, "Target Price ($)", group=group1, step=0.01, tooltip="Final target price (T3) - script calculates T1/T2 automatically")
+t1_res  = input.float(41.28, "Entry: Breaks ($)", group=group1, step=0.01)
 
 // ─── Ticker 2 ───
 group2 = "═══ TICKER 2 ═══"
 t2_on   = input.bool(true, "Enable", group=group2)
-t2_sym  = input.string("NIO", "Symbol", group=group2)
-t2_k    = input.float(5, "Strike ($)", group=group2, step=1)
-t2_exp  = input.string("JAN-02-26", "Expiry", group=group2)
-t2_tgt  = input.float(5.6, "Target Price ($)", group=group2, step=0.01, tooltip="Final target price (T3)")
-t2_res  = input.float(5.35, "Entry: Breaks ($)", group=group2, step=0.01)
+t2_sym  = input.string("IBM", "Symbol", group=group2)
+t2_k    = input.float(297.5, "Strike ($)", group=group2, step=1)
+t2_exp  = input.string("JAN-09-26", "Expiry", group=group2)
+t2_tgt  = input.float(299, "Target Price ($)", group=group2, step=0.01, tooltip="Final target price (T3)")
+t2_res  = input.float(295.75, "Entry: Breaks ($)", group=group2, step=0.01)
 
 // ─── Ticker 3 ───
 group3 = "═══ TICKER 3 ═══"
 t3_on   = input.bool(true, "Enable", group=group3)
-t3_sym  = input.string("BIDU", "Symbol", group=group3)
-t3_k    = input.float(141, "Strike ($)", group=group3, step=1)
-t3_exp  = input.string("JAN-02-26", "Expiry", group=group3)
-t3_tgt  = input.float(150, "Target Price ($)", group=group3, step=0.01, tooltip="Final target price (T3)")
-t3_res  = input.float(145, "Entry: Breaks ($)", group=group3, step=0.01)
+t3_sym  = input.string("COIN", "Symbol", group=group3)
+t3_k    = input.float(247.5, "Strike ($)", group=group3, step=1)
+t3_exp  = input.string("JAN-09-26", "Expiry", group=group3)
+t3_tgt  = input.float(252.5, "Target Price ($)", group=group3, step=0.01, tooltip="Final target price (T3)")
+t3_res  = input.float(247.5, "Entry: Breaks ($)", group=group3, step=0.01)
 
 // ─── Ticker 4 ───
 group4 = "═══ TICKER 4 ═══"
 t4_on   = input.bool(true, "Enable", group=group4)
-t4_sym  = input.string("MU", "Symbol", group=group4)
-t4_k    = input.float(292.5, "Strike ($)", group=group4, step=1)
-t4_exp  = input.string("JAN-02-26", "Expiry", group=group4)
-t4_tgt  = input.float(299, "Target Price ($)", group=group4, step=0.01, tooltip="Final target price (T3)")
-t4_res  = input.float(295, "Entry: Breaks ($)", group=group4, step=0.01)
+t4_sym  = input.string("CVX", "Symbol", group=group4)
+t4_k    = input.float(167.5, "Strike ($)", group=group4, step=1)
+t4_exp  = input.string("JAN-09-26", "Expiry", group=group4)
+t4_tgt  = input.float(172.5, "Target Price ($)", group=group4, step=0.01, tooltip="Final target price (T3)")
+t4_res  = input.float(167.5, "Entry: Breaks ($)", group=group4, step=0.01)
 
 // ─── Ticker 5 ───
 group5 = "═══ TICKER 5 ═══"
-t5_on   = input.bool(false, "Enable", group=group5)
-t5_sym  = input.string("ORCL", "Symbol", group=group5)
-t5_k    = input.float(185, "Strike ($)", group=group5, step=1)
-t5_exp  = input.string("JAN-02-26", "Expiry", group=group5)
-t5_tgt  = input.float(195, "Target Price ($)", group=group5, step=0.01, tooltip="Final target price (T3)")
-t5_res  = input.float(189.25, "Entry: Breaks ($)", group=group5, step=0.01)
+t5_on   = input.bool(true, "Enable", group=group5)
+t5_sym  = input.string("SLV", "Symbol", group=group5)
+t5_k    = input.float(69, "Strike ($)", group=group5, step=1)
+t5_exp  = input.string("JAN-09-26", "Expiry", group=group5)
+t5_tgt  = input.float(70, "Target Price ($)", group=group5, step=0.01, tooltip="Final target price (T3)")
+t5_res  = input.float(68.75, "Entry: Breaks ($)", group=group5, step=0.01)
 
 // ─── Timing Settings ───
 groupSettings = "═══ SETTINGS ═══"
@@ -176,6 +176,10 @@ if barstate.isnew
 
 // Chart ticker for label matching
 chartTicker = str.upper(syminfo.ticker)
+
+// ─── Lock Timestamp ───
+var int configLockTime = na
+configLockTime := na(configLockTime) ? time : configLockTime
 
 // ══════════════════════════════════════════════════════════════════════════════
 // SECTION 6: TICKER PROCESSING FUNCTION
@@ -789,3 +793,11 @@ plot(showT4Lines ? t4_tgt : na, "T4 Target", color=color.new(color.green, 0), li
 plot(showT5Lines ? t5_res : na, "T5 Entry", color=color.new(color.green, 40), linewidth=2, style=plot.style_linebr)
 plot(showT5Lines ? t5_tgt : na, "T5 Target", color=color.new(color.green, 0), linewidth=2, style=plot.style_linebr)
 
+// ══════════════════════════════════════════════════════════════════════════════
+// CONFIGURATION LOCK TIMESTAMP (set once per load / input change)
+// ══════════════════════════════════════════════════════════════════════════════
+var label configLockLabel = na
+string configLockLabelText = "CONFIG : " + (month(configLockTime)  < 10 ? "0" : "") + str.tostring(month(configLockTime)) + "-" + (dayofmonth(configLockTime) < 10 ? "0" : "") + str.tostring(dayofmonth(configLockTime)) + " " + (hour(configLockTime)   < 10 ? "0" : "") + str.tostring(hour(configLockTime)) + ":" + (minute(configLockTime) < 10 ? "0" : "") + str.tostring(minute(configLockTime)) + ":" +(second(configLockTime) < 10 ? "0" : "") + str.tostring(second(configLockTime))
+if barstate.islast
+    label.delete(configLockLabel),
+    configLockLabel := label.new(bar_index, high, configLockLabelText, style = label.style_label_upper_right, color = color.new(color.blue, 70), textcolor = color.white, size = size.small)
