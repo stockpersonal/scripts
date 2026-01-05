@@ -6,18 +6,18 @@ indicator("Tradewar SPY Options Assistant", overlay=true, max_labels_count=500)
 // ─── CALL Options ───
 groupCall = "═══ SPY CALLS ═══"
 enableCall      = input.bool(true, "Enable CALL Alerts", group=groupCall, tooltip="Turn OFF if analyst didn't provide CALL levels today")
-callStrike      = input.float(685, "STRIKE ($)", group=groupCall, step=1)
-callExp         = input.string("DEC-24-25", "EXP (e.g., DEC-24-25)", group=groupCall)
-callTargetPrice = input.float(687.5, "TARGET Price ($)", group=groupCall, step=0.01, tooltip="Final target price from analyst")
-callEntry       = input.float(686.18, "ENTRY: Breaks ($)", group=groupCall, step=0.01)
+callStrike      = input.float(686, "STRIKE ($)", group=groupCall, step=1)
+callExp         = input.string("JAN-06-26", "EXP (e.g., DEC-24-25)", group=groupCall)
+callTargetPrice = input.float(687, "TARGET Price ($)", group=groupCall, step=0.01, tooltip="Final target price from analyst")
+callEntry       = input.float(685.68, "ENTRY: Breaks ($)", group=groupCall, step=0.01)
 
 // ─── PUT Options ───
 groupPut = "═══ SPY PUTS ═══"
 enablePut      = input.bool(true, "Enable PUT Alerts", group=groupPut, tooltip="Turn OFF if analyst didn't provide PUT levels today")
-putStrike      = input.float(686, "STRIKE ($)", group=groupPut, step=1)
-putExp         = input.string("DEC-24-25", "EXP (e.g., DEC-24-25)", group=groupPut)
-putTargetPrice = input.float(684.25, "TARGET Price ($)", group=groupPut, step=0.01, tooltip="Final target price from analyst")
-putEntry       = input.float(685.5, "ENTRY: Loses ($)", group=groupPut, step=0.01)
+putStrike      = input.float(685, "STRIKE ($)", group=groupPut, step=1)
+putExp         = input.string("JAN-06-26", "EXP (e.g., DEC-24-25)", group=groupPut)
+putTargetPrice = input.float(683, "TARGET Price ($)", group=groupPut, step=0.01, tooltip="Final target price from analyst")
+putEntry       = input.float(684.4, "ENTRY: Loses ($)", group=groupPut, step=0.01)
 
 // ─── Timing Settings ───
 groupSettings = "═══ SETTINGS ═══"
@@ -217,6 +217,10 @@ var bool tradeAlertFiredThisBar = false
 if barstate.isnew
     tradeAlertFiredThisBar := false
     stateChangedThisBar := false  // Reset state lock each bar
+
+// ─── Lock Timestamp ───
+var int configLockTime = na
+configLockTime := na(configLockTime) ? time : configLockTime
 
 // ══════════════════════════════════════════════════════════════════════════════
 // SECTION 7: MARKET DATA
@@ -821,3 +825,12 @@ if ta.change(time("D", "America/New_York")) != 0
     tfWarningFired := false
     haltAlertFired := false
     lastAlertBar := na  // Reset alert bar tracking for new day
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CONFIGURATION LOCK TIMESTAMP (set once per load / input change)
+// ══════════════════════════════════════════════════════════════════════════════
+var label configLockLabel = na
+string configLockLabelText = "CONFIG : " + (month(configLockTime)  < 10 ? "0" : "") + str.tostring(month(configLockTime)) + "-" + (dayofmonth(configLockTime) < 10 ? "0" : "") + str.tostring(dayofmonth(configLockTime)) + " " + (hour(configLockTime)   < 10 ? "0" : "") + str.tostring(hour(configLockTime)) + ":" + (minute(configLockTime) < 10 ? "0" : "") + str.tostring(minute(configLockTime)) + ":" +(second(configLockTime) < 10 ? "0" : "") + str.tostring(second(configLockTime))
+if barstate.islast
+    label.delete(configLockLabel),
+    configLockLabel := label.new(bar_index, high, configLockLabelText, style = label.style_label_upper_right, color = color.new(color.blue, 70), textcolor = color.white, size = size.small)
