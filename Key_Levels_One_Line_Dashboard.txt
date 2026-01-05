@@ -709,7 +709,7 @@ if barstate.islast
         signal_row = "Buy Dip: " + (buy_dip ? "YES" : "NO") + " | " + "Bull Burst: " + (bullish_burst ? "YES" : "NO") + " | " + "Bear Burst: " + (bearish_burst ? "YES" : "NO")
         signal_bg = buy_dip or bullish_burst ? CLR_BULL : bearish_burst ? CLR_BEAR : CLR_GRAY
 
-        table.cell(tbl, 0, 0, syminfo.ticker + " | Key Levels v2", text_color=color.white, bgcolor=CLR_HEADER)
+        table.cell(tbl, 0, 0, syminfo.ticker + " | Key Levels", text_color=color.white, bgcolor=CLR_HEADER)
         
         if rdy_txt != prev_rdy_txt or force_redraw
             table.cell(tbl, 0, 1, "Ready: " + rdy_txt, text_color=color.white, bgcolor=rdy_clr)
