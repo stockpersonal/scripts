@@ -179,7 +179,7 @@ chartTicker = str.upper(syminfo.ticker)
 
 // ─── Lock Timestamp ───
 var int configLockTime = na
-configLockTime := na(configLockTime) ? time : configLockTime
+configLockTime := na(configLockTime) ? timenow : configLockTime
 
 // ══════════════════════════════════════════════════════════════════════════════
 // SECTION 6: TICKER PROCESSING FUNCTION
@@ -798,6 +798,6 @@ plot(showT5Lines ? t5_tgt : na, "T5 Target", color=color.new(color.green, 0), li
 // ══════════════════════════════════════════════════════════════════════════════
 var label configLockLabel = na
 string configLockLabelText = "CONFIG : " + (month(configLockTime)  < 10 ? "0" : "") + str.tostring(month(configLockTime)) + "-" + (dayofmonth(configLockTime) < 10 ? "0" : "") + str.tostring(dayofmonth(configLockTime)) + " " + (hour(configLockTime)   < 10 ? "0" : "") + str.tostring(hour(configLockTime)) + ":" + (minute(configLockTime) < 10 ? "0" : "") + str.tostring(minute(configLockTime)) + ":" +(second(configLockTime) < 10 ? "0" : "") + str.tostring(second(configLockTime))
-if barstate.islast
+if ((t1_on and str.upper(t1_sym) == chartTicker) or (t2_on and str.upper(t2_sym) == chartTicker) or (t3_on and str.upper(t3_sym) == chartTicker) or (t4_on and str.upper(t4_sym) == chartTicker) or (t5_on and str.upper(t5_sym) == chartTicker)) and barstate.islast
     label.delete(configLockLabel),
     configLockLabel := label.new(bar_index, high, configLockLabelText, style = label.style_label_upper_right, color = color.new(color.blue, 70), textcolor = color.white, size = size.small)
