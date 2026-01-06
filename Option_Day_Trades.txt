@@ -9,37 +9,42 @@ calcTF         = input.timeframe("5", "Calc TF", group="Timeframes")
 alertTF        = input.timeframe("1", "Alert TF", group="Timeframes")
 
 //───────────────────────────── Trend Settings ─────────────────────────────
-fastEmaLen     = input.int(9, "Fast EMA", group="Trend")
+fastEmaLen     = input.int(8, "Fast EMA", group="Trend")
 midEmaLen      = input.int(21, "Mid EMA", group="Trend")
-slowEmaLen     = input.int(50, "Slow EMA", group="Trend")
-pullbackLen    = input.int(5, "Pullback Length", group="Trend")
+slowEmaLen     = input.int(34, "Slow EMA", group="Trend")
+pullbackLen    = input.int(3, "Pullback Length", group="Trend")
 
 //───────────────────────────── Filters ─────────────────────────────
 useVWAP        = input.bool(true, "Use VWAP Filter", group="Filters")
-minDailyVol    = input.int(200000, "Min Daily Volume", group="Filters")
+minDailyVol    = input.int(150000, "Min Daily Volume", group="Filters")
 
 //───────────────────────────── Gap Analysis ─────────────────────────────
 useGapFilter   = input.bool(true, "Use Gap Filter", group="Gap Analysis", tooltip="Filter signals based on overnight gap direction")
-gapThreshold   = input.float(0.5, "Gap Threshold %", group="Gap Analysis", minval=0.1, maxval=5.0, tooltip="TSLA/NVDA: 0.5 | MSTR: 1.0")
+gapThreshold   = input.float(0.3, "Gap Threshold %", group="Gap Analysis", minval=0.1, maxval=5.0, tooltip="TSLA/NVDA: 0.3 | MSTR: 1.0")
 gapMode        = input.string("Trend", "Gap Filter Mode", group="Gap Analysis", options=["Trend", "Fade", "Info Only"], tooltip="Trend: Trade with gap | Fade: Trade against gap | Info Only: Just show in alerts")
 
 //───────────────────────────── Opening Range Breakout ─────────────────────────────
 useORB         = input.bool(true, "Use ORB Filter", group="Opening Range", tooltip="Require price to break opening range")
-orbMinutes     = input.int(15, "ORB Period (minutes)", group="Opening Range", minval=5, maxval=60, tooltip="TSLA/NVDA: 15 | MSTR: 30")
+orbMinutes     = input.int(10, "ORB Period (minutes)", group="Opening Range", minval=5, maxval=60, tooltip="TSLA/NVDA: 10 | MSTR: 30")
 orbMode        = input.string("Breakout", "ORB Mode", group="Opening Range", options=["Breakout", "Info Only"], tooltip="Breakout: Only trade breaks | Info Only: Just show levels")
 
 //───────────────────────────── Previous Day Levels ─────────────────────────────
 usePDLevels    = input.bool(true, "Use Prev Day H/L Filter", group="Prev Day Levels", tooltip="Filter based on previous day high/low")
-pdBuffer       = input.float(0.25, "PD Level Buffer %", group="Prev Day Levels", minval=0.0, maxval=1.0, tooltip="TSLA: 0.3 | NVDA: 0.2")
+pdBuffer       = input.float(0.15, "PD Level Buffer %", group="Prev Day Levels", minval=0.0, maxval=1.0, tooltip="TSLA: 0.15 | NVDA: 0.15")
 
 //───────────────────────────── Market Regime (SPY/QQQ) ─────────────────────────────
 useMarketFilter = input.bool(false, "Use Market Filter", group="Market Regime", tooltip="Filter signals based on market trend (requires data subscription)")
 marketSymbol    = input.symbol("SPY", "Market Index", group="Market Regime", tooltip="TSLA: SPY | NVDA: QQQ")
 
+//───────────────────────────── Symbol Profile (auto) ─────────────────────────────
+symbolUpper   = str.upper(syminfo.ticker)
+orbProfile    = symbolUpper == "TSLA" ? "TREND" : symbolUpper == "NVDA" ? "ROTATION" : "DEFAULT"
+orbMinutesUsed = orbProfile == "TREND" ? 15 : orbProfile == "ROTATION" ? 10 : orbMinutes
+
 //───────────────────────────── Time of Day ─────────────────────────────
 useTODFilter    = input.bool(true, "Use Time Filter", group="Time of Day", tooltip="Avoid low-volume lunch period")
 avoidLunchStart = input.int(11, "Avoid Lunch Start Hour", group="Time of Day", minval=10, maxval=13, tooltip="TSLA/NVDA: 11")
-avoidLunchEnd   = input.int(13, "Avoid Lunch End Hour", group="Time of Day", minval=12, maxval=15, tooltip="TSLA/NVDA: 13")
+avoidLunchEnd   = input.int(12, "Avoid Lunch End Hour", group="Time of Day", minval=12, maxval=15, tooltip="TSLA/NVDA: 12")
 
 //───────────────────────────── Visual Labels ─────────────────────────────
 showLabels      = input.bool(true, "Show Chart Labels", group="Display", tooltip="Show entry/exit labels on chart for EOD review")
@@ -49,26 +54,26 @@ showEarlyAlerts = input.bool(false, "Show EARLY Alerts", group="Display", toolti
 
 //───────────────────────────── Targets ─────────────────────────────
 // STOCK PRESETS:
-// TSLA/NVDA (High Vol):    T1=0.5, T2=1.2, T3=2.5, Delta=0.50, ATR=1.0
-// MSTR (Extreme Vol):      T1=1.0, T2=2.5, T3=5.0, Delta=0.50, ATR=1.5
-// PLTR (Moderate Vol):     T1=0.4, T2=0.8, T3=1.5, Delta=0.50, ATR=0.75
+// TSLA/NVDA (High Vol):    T1=0.35, T2=0.8, T3=1.6, Delta=0.50, ATR=0.8
+// MSTR (Extreme Vol):      T1=1.0,  T2=2.5, T3=5.0, Delta=0.50, ATR=1.5
+// PLTR (Moderate Vol):     T1=0.4,  T2=0.8, T3=1.5, Delta=0.50, ATR=0.75
 
-t1Pct          = input.float(0.5, "T1 Underlying Move %", group="Targets", tooltip="TSLA/NVDA: 0.5 | MSTR: 1.0 | PLTR: 0.4")
-t2Pct          = input.float(1.2, "T2 Underlying Move %", group="Targets", tooltip="TSLA/NVDA: 1.2 | MSTR: 2.5 | PLTR: 0.8")
-t3Pct          = input.float(2.5, "T3 Underlying Move %", group="Targets", tooltip="TSLA/NVDA: 2.5 | MSTR: 5.0 | PLTR: 1.5")
+t1Pct          = input.float(0.35, "T1 Underlying Move %", group="Targets", tooltip="TSLA/NVDA: 0.35 | MSTR: 1.0 | PLTR: 0.4")
+t2Pct          = input.float(0.8, "T2 Underlying Move %", group="Targets", tooltip="TSLA/NVDA: 0.8 | MSTR: 2.5 | PLTR: 0.8")
+t3Pct          = input.float(1.6, "T3 Underlying Move %", group="Targets", tooltip="TSLA/NVDA: 1.6 | MSTR: 5.0 | PLTR: 1.5")
 optionDelta    = input.float(0.50, "Estimated Option Delta", group="Targets", minval=0.1, maxval=1.0, tooltip="ATM weeklies ≈ 0.50")
 
 //───────────────────────────── Risk Management ─────────────────────────────
 useAtrStop     = input.bool(true, "Use ATR Stop", group="Risk")
-atrMultiplier  = input.float(1.0, "ATR Stop Multiplier", group="Risk", tooltip="TSLA/NVDA: 1.0 | MSTR: 1.5 | PLTR: 0.75")
+atrMultiplier  = input.float(0.8, "ATR Stop Multiplier", group="Risk", tooltip="TSLA/NVDA: 0.8 | MSTR: 1.5 | PLTR: 0.75")
 tightStops     = input.bool(true, "Tight Stops (0DTE Mode)", group="Risk", tooltip="ON: Cut losses fast | OFF: Avoid noise")
 
 //───────────────────────────── Session & Timing ─────────────────────────────
 avoidOpenMin    = input.int(15, "Avoid First X Minutes", group="Session", tooltip="Skip chaotic open. 0DTE: 15-30 min")
 forceExitHour   = input.int(15, "Force Exit Hour", group="Session", tooltip="0DTE: Consider 15:30 or earlier")
 forceExitMin    = input.int(45, "Force Exit Minute", group="Session", tooltip="Exit before gamma risk spikes")
-confirmDelayMin = input.int(5, "Confirmation Delay (min)", group="Session")
-maxEarlyMin     = input.int(10, "Max Early Window (min)", group="Session")
+confirmDelayMin = input.int(2, "Confirmation Delay (min)", group="Session")
+maxEarlyMin     = input.int(7, "Max Early Window (min)", group="Session")
 reentryDelayBars = input.int(0, "Re-entry Cooldown (bars)", group="Session", minval=0, maxval=10, tooltip="Wait X bars after exit before re-entry. 0=immediate")
 
 
@@ -105,8 +110,10 @@ pastOpenBuffer = time >= openBufferTime
 allowNewTrades = time < forceExitTime and pastOpenBuffer
 
 //───────────────────────────── Time Calculations ─────────────────────────────
-confirmDelayMs = confirmDelayMin * 60 * 1000
-maxEarlyMs     = maxEarlyMin * 60 * 1000
+confirmDelayUsed    = orbProfile == "TREND" ? 3 : orbProfile == "ROTATION" ? 1 : confirmDelayMin
+confirmDelayBars    = math.ceil(confirmDelayUsed * 60 / timeframe.multiplier)
+maxEarlyBars        = math.ceil(maxEarlyMin * 60 / timeframe.multiplier)
+earlyCooldownBars   = math.ceil(2 * 60 / timeframe.multiplier)
 
 // ┌───────────────────────────────────────────────────────────────────────────────┐
 // │                          [4] DATA FEEDS                                       │
@@ -160,7 +167,7 @@ gapAllowsPut  = not useGapFilter or gapMode == "Info Only" or (gapMode == "Trend
 
 //───────────────────────────── Opening Range Breakout ─────────────────────────────
 // Calculate ORB window end time (FIX: use milliseconds to avoid minute overflow bug)
-orbEndTime  = sessionStart + orbMinutes * 60 * 1000
+orbEndTime  = sessionStart + orbMinutesUsed * 60 * 1000
 inORBPeriod = time >= sessionStart and time <= orbEndTime
 
 // Track ORB High/Low (persisted through day)
@@ -182,10 +189,16 @@ orbBreakoutUp   = orbComplete and closeCalc > orbHigh
 orbBreakoutDown = orbComplete and closeCalc < orbLow
 orbRange        = orbComplete ? orbHigh - orbLow : 0
 orbRangePct     = orbComplete and orbLow > 0 ? (orbRange / orbLow) * 100 : 0
+orbReclaimUp    = orbComplete and ta.crossover(closeCalc, orbHigh)
+orbReclaimDown  = orbComplete and ta.crossunder(closeCalc, orbLow)
 
 // ORB filter logic
-orbAllowsCall = not useORB or orbMode == "Info Only" or (orbComplete and orbBreakoutUp)
-orbAllowsPut  = not useORB or orbMode == "Info Only" or (orbComplete and orbBreakoutDown)
+orbAllowsCallBase = not useORB or orbMode == "Info Only" or (orbComplete and orbBreakoutUp)
+orbAllowsPutBase  = not useORB or orbMode == "Info Only" or (orbComplete and orbBreakoutDown)
+orbAllowsCallProfile = orbProfile == "TREND" ? (orbComplete and orbBreakoutUp) : orbProfile == "ROTATION" ? (orbComplete and (orbBreakoutUp or orbReclaimUp)) : orbAllowsCallBase
+orbAllowsPutProfile  = orbProfile == "TREND" ? (orbComplete and orbBreakoutDown) : orbProfile == "ROTATION" ? (orbComplete and (orbBreakoutDown or orbReclaimDown)) : orbAllowsPutBase
+orbAllowsCallActive  = not useORB or orbAllowsCallProfile
+orbAllowsPutActive   = not useORB or orbAllowsPutProfile
 
 // ORB info for alerts
 orbInfo = orbComplete ? "ORB H:" + str.tostring(orbHigh, "#.##") + " L:" + str.tostring(orbLow, "#.##") + " (" + str.tostring(orbRangePct, "#.#") + "%)" : "ORB Building"
@@ -259,8 +272,14 @@ vwapBull = not useVWAP or closeCalc > vwapVal
 vwapBear = not useVWAP or closeCalc < vwapVal
 
 //───────────────────────────── Combined Entry Signal ─────────────────────────────
-callValid = bullTrend and vwapBull and closeCalc > sup and liquidityOK and gapAllowsCall and orbAllowsCall and pdAllowsCall and mktAllowsCall and todAllowsTrade
-putValid  = bearTrend and vwapBear and closeCalc < res and liquidityOK and gapAllowsPut and orbAllowsPut and pdAllowsPut and mktAllowsPut and todAllowsTrade
+callValid = bullTrend and vwapBull and closeCalc >= emaFast and liquidityOK and gapAllowsCall and orbAllowsCallActive and pdAllowsCall and mktAllowsCall and todAllowsTrade
+putValid  = bearTrend and vwapBear and closeCalc <= emaFast and liquidityOK and gapAllowsPut and orbAllowsPutActive and pdAllowsPut and mktAllowsPut and todAllowsTrade
+callValidConfirm = orbProfile == "ROTATION" ? (bullTrend and liquidityOK and gapAllowsCall and pdAllowsCall and mktAllowsCall and todAllowsTrade) : callValid
+putValidConfirm  = orbProfile == "ROTATION" ? (bearTrend and liquidityOK and gapAllowsPut and pdAllowsPut and mktAllowsPut and todAllowsTrade) : putValid
+
+// Visual debug (non-blocking): shows when signals are valid
+plotshape(callValid, title="CALL VALID", style=shape.circle, location=location.belowbar, color=color.new(color.green, 0), size=size.tiny)
+plotshape(putValid, title="PUT VALID", style=shape.circle, location=location.abovebar, color=color.new(color.red, 0), size=size.tiny)
 
 
 // ┌───────────────────────────────────────────────────────────────────────────────┐
@@ -278,6 +297,8 @@ var bool  callT3Hit       = false
 var bool  callStopHit     = false
 var int   callLastExitBar = na
 var int   callEntryBar    = na  // Track entry bar for same-bar stop protection
+var int   callEarlyBar    = na
+var bool  callOrbPassed   = false
 
 //───────────────────────────── PUT State ─────────────────────────────
 var int   putState       = IDLE
@@ -290,6 +311,8 @@ var bool  putT3Hit       = false
 var bool  putStopHit     = false
 var int   putLastExitBar = na
 var int   putEntryBar    = na  // Track entry bar for same-bar stop protection
+var int   putEarlyBar    = na
+var bool  putOrbPassed   = false
 
 //───────────────────────────── Shared State ─────────────────────────────
 var int  dayBias        = BIAS_NONE
@@ -320,6 +343,8 @@ if isNewDay
     callStopHit     := false
     callLastExitBar := na
     callEntryBar    := na
+    callEarlyBar    := na
+    callOrbPassed   := false
     
     // Reset PUT
     putState       := IDLE
@@ -332,6 +357,8 @@ if isNewDay
     putStopHit     := false
     putLastExitBar := na
     putEntryBar    := na
+    putEarlyBar    := na
+    putOrbPassed   := false
     
     // Reset ORB
     orbHigh   := na
@@ -360,40 +387,46 @@ if isNewDay
 // │                         [9] STATE MACHINE                                     │
 // └───────────────────────────────────────────────────────────────────────────────┘
 
-if barstate.isconfirmed
+if barstate.isconfirmed or barstate.isrealtime
 
     // ═══════════════════════════════════════════════════════════════════════════
     //                          CALL STATE MACHINE                               
     // ═══════════════════════════════════════════════════════════════════════════
     
     callAllowed = (dayBias == BIAS_NONE or dayBias == BIAS_CALL) and putState != EARLY  // Prevent simultaneous EARLY
-    earlyCooldownMs = 2 * 60 * 1000  // 2 minutes cooldown for EARLY alerts
+    earlyCooldownBarsUsed = earlyCooldownBars  // explicit alias for clarity
     
     //───────────────────────────── IDLE → EARLY ─────────────────────────────
-    earlyCallCooldownOK = na(lastEarlyCallAlertTime) or time - lastEarlyCallAlertTime > earlyCooldownMs
+    earlyCallCooldownOK = na(lastEarlyCallAlertTime) or bar_index - lastEarlyCallAlertTime > earlyCooldownBarsUsed
     if callState == IDLE and callValid and inSession and allowNewTrades and callAllowed and earlyCallCooldownOK
         callState     := EARLY
         callEarlyTime := time
-        lastEarlyCallAlertTime := time  // Track for cooldown
+        callEarlyBar  := bar_index
+        lastEarlyCallAlertTime := bar_index  // Track for cooldown
+        callOrbPassed := orbProfile != "ROTATION" or orbAllowsCallActive
         // >>> ALERT: EARLY CALL (heads-up) <<<
         if showEarlyAlerts
             alert("[EARLY CALL] " + syminfo.ticker + " @ " + str.tostring(closeExec, "#.##") + " | Watching for confirmation...", alert.freq_once_per_bar)
     
     //───────────────────────────── EARLY → IDLE (Invalidation) ─────────────────────────────
-    if callState == EARLY and not callValid
+    if callState == EARLY and not callValidConfirm
         callState     := IDLE
         callEarlyTime := na
+        callEarlyBar  := na
+        callOrbPassed := false
     
     //───────────────────────────── EARLY → IDLE (Expiration) ─────────────────────────────
-    if callState == EARLY and not na(callEarlyTime) and time - callEarlyTime > maxEarlyMs
+    if callState == EARLY and not na(callEarlyBar) and bar_index - callEarlyBar > maxEarlyBars
         callState     := IDLE
         callEarlyTime := na
+        callEarlyBar  := na
+        callOrbPassed := false
     
     //───────────────────────────── EARLY → IN_TRADE ─────────────────────────────
-    canConfirmCall = not na(callEarlyTime) and time - callEarlyTime >= confirmDelayMs
+    canConfirmCall = not na(callEarlyBar) and bar_index - callEarlyBar >= confirmDelayBars
     
     // FIX: Prevent CALL & PUT confirming on same bar
-    if callState == EARLY and canConfirmCall and callValid and inSession and allowNewTrades and putState != IN_TRADE
+    if callState == EARLY and canConfirmCall and callValidConfirm and callOrbPassed and inSession and allowNewTrades and putState != IN_TRADE
         callState    := IN_TRADE
         callEntry    := closeExec
         callEntryBar := bar_index  // Track entry bar for same-bar stop protection
@@ -494,6 +527,8 @@ if barstate.isconfirmed
     if callState == EXITED and callValid and inSession and allowNewTrades and reentryCallAllowed
         callState     := EARLY
         callEarlyTime := time
+        callEarlyBar  := bar_index
+        callOrbPassed := callOrbPassed or orbAllowsCallActive
 
     // ═══════════════════════════════════════════════════════════════════════════
     //                           PUT STATE MACHINE                               
@@ -502,30 +537,36 @@ if barstate.isconfirmed
     putAllowed = (dayBias == BIAS_NONE or dayBias == BIAS_PUT) and callState != EARLY  // Prevent simultaneous EARLY
     
     //───────────────────────────── IDLE → EARLY ─────────────────────────────
-    earlyPutCooldownOK = na(lastEarlyPutAlertTime) or time - lastEarlyPutAlertTime > earlyCooldownMs
+    earlyPutCooldownOK = na(lastEarlyPutAlertTime) or bar_index - lastEarlyPutAlertTime > earlyCooldownBarsUsed
     if putState == IDLE and putValid and inSession and allowNewTrades and putAllowed and earlyPutCooldownOK
         putState     := EARLY
         putEarlyTime := time
-        lastEarlyPutAlertTime := time  // Track for cooldown
+        putEarlyBar  := bar_index
+        lastEarlyPutAlertTime := bar_index  // Track for cooldown
+        putOrbPassed := orbProfile != "ROTATION" or orbAllowsPutActive
         // >>> ALERT: EARLY PUT (heads-up) <<<
         if showEarlyAlerts
             alert("[EARLY PUT] " + syminfo.ticker + " @ " + str.tostring(closeExec, "#.##") + " | Watching for confirmation...", alert.freq_once_per_bar)
     
     //───────────────────────────── EARLY → IDLE (Invalidation) ─────────────────────────────
-    if putState == EARLY and not putValid
+    if putState == EARLY and not putValidConfirm
         putState     := IDLE
         putEarlyTime := na
+        putEarlyBar  := na
+        putOrbPassed := false
     
     //───────────────────────────── EARLY → IDLE (Expiration) ─────────────────────────────
-    if putState == EARLY and not na(putEarlyTime) and time - putEarlyTime > maxEarlyMs
+    if putState == EARLY and not na(putEarlyBar) and bar_index - putEarlyBar > maxEarlyBars
         putState     := IDLE
         putEarlyTime := na
+        putEarlyBar  := na
+        putOrbPassed := false
     
     //───────────────────────────── EARLY → IN_TRADE ─────────────────────────────
-    canConfirmPut = not na(putEarlyTime) and time - putEarlyTime >= confirmDelayMs
+    canConfirmPut = not na(putEarlyBar) and bar_index - putEarlyBar >= confirmDelayBars
     
     // FIX: Prevent CALL & PUT confirming on same bar
-    if putState == EARLY and canConfirmPut and putValid and inSession and allowNewTrades and callState != IN_TRADE
+    if putState == EARLY and canConfirmPut and putValidConfirm and putOrbPassed and inSession and allowNewTrades and callState != IN_TRADE
         putState    := IN_TRADE
         putEntry    := closeExec
         putEntryBar := bar_index  // Track entry bar for same-bar stop protection
@@ -628,6 +669,8 @@ if barstate.isconfirmed
     if putState == EXITED and putValid and inSession and allowNewTrades and reentryPutAllowed
         putState     := EARLY
         putEarlyTime := time
+        putEarlyBar  := bar_index
+        putOrbPassed := putOrbPassed or orbAllowsPutActive
 
     // ═══════════════════════════════════════════════════════════════════════════
     //                        SESSION END CLEANUP                                
@@ -639,3 +682,15 @@ if barstate.isconfirmed
             callState := IDLE
         if putState == EXITED
             putState := IDLE
+
+// ┌───────────────────────────────────────────────────────────────────────────────┐
+// │                    CONFIG LOCK TIMESTAMP (visibility only)                    │
+// └───────────────────────────────────────────────────────────────────────────────┘
+var int configLockTime = na
+if na(configLockTime)
+    configLockTime := timenow
+
+var label configLabel = na
+if barstate.islast
+    label.delete(configLabel)
+    configLabel := label.new(bar_index, high, "LOCKED AT: " + str.format("{0,date,MM-dd HH:mm:ss} ET", configLockTime), style=label.style_label_upper_right, color=color.new(color.red, 75), textcolor=color.white, size=size.small)
