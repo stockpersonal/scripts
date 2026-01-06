@@ -831,6 +831,6 @@ if ta.change(time("D", "America/New_York")) != 0
 // ══════════════════════════════════════════════════════════════════════════════
 var label configLockLabel = na
 string configLockLabelText = "CONFIG : " + (month(configLockTime)  < 10 ? "0" : "") + str.tostring(month(configLockTime)) + "-" + (dayofmonth(configLockTime) < 10 ? "0" : "") + str.tostring(dayofmonth(configLockTime)) + " " + (hour(configLockTime)   < 10 ? "0" : "") + str.tostring(hour(configLockTime)) + ":" + (minute(configLockTime) < 10 ? "0" : "") + str.tostring(minute(configLockTime)) + ":" +(second(configLockTime) < 10 ? "0" : "") + str.tostring(second(configLockTime))
-if barstate.islast
+if barstate.islast and isSPY
     label.delete(configLockLabel),
     configLockLabel := label.new(bar_index, high, configLockLabelText, style = label.style_label_upper_right, color = color.new(color.blue, 70), textcolor = color.white, size = size.small)
