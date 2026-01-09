@@ -1,0 +1,500 @@
+//@version=5
+indicator("SPY & SPX ORB Signals", overlay=true, dynamic_requests=true, max_labels_count=500)
+
+// ─── INPUTS ───
+baseMinTickBull = input.int(400, "Base Min $TICK (5m)")
+baseMaxTickBear = input.int(-400, "Base Max $TICK (5m)")
+volLength = input.int(20, "Volume MA Length")
+strikeStep = 0.5
+signalMode = input.string("AUTO", "Master Signal Mode", options=["AUTO", "ORB_ONLY", "TREND_ONLY", "VWAP_ONLY"])
+allowORB = signalMode == "AUTO" or signalMode == "ORB_ONLY"
+allowTrend = signalMode == "AUTO" or signalMode == "TREND_ONLY"
+allowVWAP = signalMode == "AUTO" or signalMode == "VWAP_ONLY"
+t1Pct = input.float(0.25, "T1 %", group="Trade")
+t2Pct = input.float(0.5, "T2 %", group="Trade")
+stopPct = input.float(0.3, "SL %", group="Trade")
+confirmDelayMin = input.int(2, "Confirm Delay (min)", group="Trade")
+maxTradesPerDay = input.int(2, "Max Trades/Dir", group="Trade", minval=1, maxval=5)
+optionDelta = input.float(0.50, "Option Delta", group="Trade", minval=0.1, maxval=1.0)
+orbTrendThreshold = input.int(5, "ORB Trend Bars", minval=1, group="Tuning")
+minValidScore = input.int(40, "Min Score", minval=0, maxval=100, group="Tuning")
+decayStartORB = input.int(5, "Decay Start ORB", minval=1, group="Tuning")
+decayStartTrend = input.int(8, "Decay Start Trend", minval=1, group="Tuning")
+decayStartVWAP = input.int(5, "Decay Start VWAP", minval=1, group="Tuning")
+decayRateORB = input.int(5, "Decay Rate ORB", minval=1, group="Tuning")
+decayRateTrend = input.int(4, "Decay Rate Trend", minval=1, group="Tuning")
+decayRateVWAP = input.int(6, "Decay Rate VWAP", minval=1, group="Tuning")
+useTick = input.bool(true, "Use $TICK")
+
+// ─── TIMEFRAME VALIDATION ───
+if not timeframe.isintraday or (timeframe.period != "1" and timeframe.period != "5")
+    runtime.error("Use 1m or 5m chart")
+is1m = timeframe.period == "1"
+holdBars = is1m ? 1 : 2
+confirmBars = is1m ? 1 : 2
+minTickBull = is1m ? baseMinTickBull - 100 : baseMinTickBull
+maxTickBear = is1m ? baseMaxTickBear + 100 : baseMaxTickBear
+confirmDelayBars = math.ceil(confirmDelayMin * 60 / timeframe.multiplier)
+
+// ─── STATE VARIABLES ───
+var float lastStrike = na
+var int lastSignalBar = na
+var float lastScore = na
+var int lastScoreBar = na
+var string lastSignalType = na
+var int lastLoggedBar = na
+var int lastAlertBar = na
+var int activeSignalStartBar = na
+var string activeSignalType = na
+
+// ─── TRADE STATE MACHINE ───
+const int SM_IDLE = 0
+const int SM_EARLY = 1
+const int SM_TRADE = 2
+const int SM_EXITED = 3
+var int callState = SM_IDLE
+var float callEntry = na
+var float callSL = na
+var int callEarlyBar = na
+var int callEntryBar = na
+var int callTradeCount = 0
+var bool callT1Hit = false
+var bool callT2Hit = false
+var bool callStopHit = false
+var string callSignalType = na
+var int putState = SM_IDLE
+var float putEntry = na
+var float putSL = na
+var int putEarlyBar = na
+var int putEntryBar = na
+var int putTradeCount = 0
+var bool putT1Hit = false
+var bool putT2Hit = false
+var bool putStopHit = false
+var string putSignalType = na
+
+// ─── SESSION TIMES (NY timezone) ───
+var int startMorning = na
+var int endMorning = na
+var int startPower = na
+var int endPower = na
+var int lateCutoff = na
+newDay = ta.change(time("D")) != 0
+if newDay or na(startMorning)
+    startMorning := timestamp("America/New_York", year, month, dayofmonth, 9, 30)
+    endMorning := timestamp("America/New_York", year, month, dayofmonth, 10, 30)
+    startPower := timestamp("America/New_York", year, month, dayofmonth, 14, 0)
+    endPower := timestamp("America/New_York", year, month, dayofmonth, 15, 30)
+    lateCutoff := timestamp("America/New_York", year, month, dayofmonth, 14, 0)
+validTime = (time >= startMorning and time <= endMorning) or (time >= startPower and time <= endPower)
+
+// ─── ORB STATE ───
+orbStart = startMorning
+orbEnd = startMorning + (is1m ? 5 : 15) * 60 * 1000
+var float orbHigh = na
+var float orbLow = na
+var int aboveOrbHighBars = 0
+var int belowOrbLowBars = 0
+var bool orbBullBroken = false
+var bool orbBearBroken = false
+var int orbBullBreakBar = na
+var int orbBearBreakBar = na
+
+// ─── DAILY RESET ───
+if newDay
+    orbHigh := na
+    orbLow := na
+    aboveOrbHighBars := 0
+    belowOrbLowBars := 0
+    orbBullBroken := false
+    orbBearBroken := false
+    orbBullBreakBar := na
+    orbBearBreakBar := na
+    lastStrike := na
+    lastSignalBar := na
+    lastScore := na
+    lastScoreBar := na
+    lastSignalType := na
+    callState := SM_IDLE
+    callEntry := na
+    callSL := na
+    callEarlyBar := na
+    callEntryBar := na
+    callT1Hit := false
+    callT2Hit := false
+    callStopHit := false
+    callTradeCount := 0
+    callSignalType := na
+    putState := SM_IDLE
+    putEntry := na
+    putSL := na
+    putEarlyBar := na
+    putEntryBar := na
+    putT1Hit := false
+    putT2Hit := false
+    putStopHit := false
+    putTradeCount := 0
+    putSignalType := na
+    activeSignalStartBar := na
+    activeSignalType := na
+
+// ─── VWAP & VOLUME ───
+spyVWAP = ta.vwap(close)
+holdAboveVWAP = ta.lowest(close, holdBars) > spyVWAP
+holdBelowVWAP = ta.highest(close, holdBars) < spyVWAP
+volMA = ta.sma(volume, volLength)
+volConfirm = volume > volMA * 0.9
+
+// ─── ORB BUILD & DETECTION ───
+if time >= orbStart and time <= orbEnd
+    orbHigh := na(orbHigh) ? high : math.max(orbHigh, high)
+    orbLow := na(orbLow) ? low : math.min(orbLow, low)
+
+orbReady = not na(orbHigh) and not na(orbLow)
+orbBreakWindow = time >= orbStart and time <= orbEnd + 15 * 60 * 1000
+orbActive = time >= orbStart and time <= orbEnd + 45 * 60 * 1000
+if orbBreakWindow and orbReady and ta.crossover(close, orbHigh) and not orbBullBroken
+    orbBullBroken := true
+    orbBullBreakBar := bar_index
+if orbBreakWindow and orbReady and ta.crossunder(close, orbLow) and not orbBearBroken
+    orbBearBroken := true
+    orbBearBreakBar := bar_index
+
+// ─── ORB CONFIRMATION ───
+retestTol = is1m ? 0.001 : 0.0005
+orbBullRetest = orbReady and low <= orbHigh * (1 + retestTol) and close > orbHigh
+orbBearRetest = orbReady and high >= orbLow * (1 - retestTol) and close < orbLow
+orbBullConfirm = orbBullBroken and orbActive and ((orbBullRetest and not na(orbBullBreakBar) and bar_index - orbBullBreakBar <= confirmBars + 2) or (close > orbHigh and aboveOrbHighBars >= confirmBars))
+orbBearConfirm = orbBearBroken and orbActive and ((orbBearRetest and not na(orbBearBreakBar) and bar_index - orbBearBreakBar <= confirmBars + 2) or (close < orbLow and belowOrbLowBars >= confirmBars))
+
+// ─── EXTERNAL DATA ───
+bool finalCALL = false
+bool finalPUT = false
+bool failCALL = false
+bool failPUT = false
+needExternal = validTime and (allowORB or allowTrend)
+[vixClose_raw, vixVWAP_raw] = request.security("CBOE:VIX", timeframe.period, [close, ta.vwap(close)])
+vixClose = needExternal ? vixClose_raw : na
+vixVWAP = needExternal ? vixVWAP_raw : na
+tick_raw = request.security("USI:TICK", timeframe.period, close)
+tick = useTick and needExternal ? tick_raw : na
+// When VIX unavailable, allow both directions (don't block signals)
+vixWeak = na(vixClose) or vixClose < vixVWAP
+vixStrong = na(vixClose) or vixClose > vixVWAP
+tickBull = not useTick or na(tick) or tick >= minTickBull
+tickBear = not useTick or na(tick) or tick <= maxTickBear
+vixTrendLong = not na(vixClose) and vixWeak and vixWeak[1]
+vixTrendShort = not na(vixClose) and vixStrong and vixStrong[1]
+
+// ─── TREND DAY DETECTION ───
+if orbReady
+    aboveOrbHighBars := close >= orbHigh ? aboveOrbHighBars + 1 : 0
+    belowOrbLowBars := close <= orbLow ? belowOrbLowBars + 1 : 0
+orbTrendLong = aboveOrbHighBars > orbTrendThreshold
+orbTrendShort = belowOrbLowBars > orbTrendThreshold
+trendDayLong = (holdAboveVWAP and orbTrendLong) or (holdAboveVWAP and vixTrendLong) or (orbTrendLong and vixTrendLong)
+trendDayShort = (holdBelowVWAP and orbTrendShort) or (holdBelowVWAP and vixTrendShort) or (orbTrendShort and vixTrendShort)
+
+// ─── TRAP DETECTION ───
+orbTrapTimeOK = time <= orbEnd + 30 * 60 * 1000
+orbBullTrap = validTime and orbTrapTimeOK and orbReady and high > orbHigh and close < orbHigh and close < spyVWAP and vixStrong and tickBear and volConfirm
+orbBearTrap = validTime and orbTrapTimeOK and orbReady and low < orbLow and close > orbLow and close > spyVWAP and vixWeak and tickBull and volConfirm
+
+// ─── SIGNAL GENERATION ───
+callORB = validTime and orbBullConfirm and holdAboveVWAP and vixWeak and tickBull and volConfirm
+putORB = validTime and orbBearConfirm and holdBelowVWAP and vixStrong and tickBear and volConfirm
+prelimFailCALL = orbBearTrap and not trendDayLong
+prelimFailPUT = orbBullTrap and not trendDayShort
+trendTimeOK = time < lateCutoff or (time >= startPower and time <= endPower)
+trendLongFB = trendTimeOK and not orbBullConfirm and orbReady and time > orbEnd and close > orbHigh and holdAboveVWAP and trendDayLong and vixWeak and tickBull and volConfirm
+trendShortFB = trendTimeOK and not orbBearConfirm and orbReady and time > orbEnd and close < orbLow and holdBelowVWAP and trendDayShort and vixStrong and tickBear and volConfirm
+vwapRejectLong = close > spyVWAP and low < spyVWAP and ta.barssince(close < spyVWAP) <= 2 and close > close[1] and orbReady and close > orbHigh and vixWeak and tickBull and volConfirm and not trendDayLong
+vwapRejectShort = close < spyVWAP and high > spyVWAP and ta.barssince(close > spyVWAP) <= 2 and close < close[1] and orbReady and close < orbLow and vixStrong and tickBear and volConfirm and not trendDayShort
+
+// ─── FINAL SIGNAL (mutual exclusion) ───
+finalCALL := (allowORB and callORB) or (not callORB and allowTrend and trendLongFB) or (not callORB and not trendLongFB and allowVWAP and vwapRejectLong)
+finalPUT := (allowORB and putORB) or (not putORB and allowTrend and trendShortFB) or (not putORB and not trendShortFB and allowVWAP and vwapRejectShort)
+if finalCALL and finalPUT
+    finalPUT := false
+
+// ─── STRIKE CALCULATION ───
+spyStrike = math.round(close / strikeStep) * strikeStep
+needSPX = finalCALL or finalPUT or prelimFailCALL or prelimFailPUT
+spxPrice = needSPX ? request.security("SPX", timeframe.period, close) : na
+spxStrike = not na(spxPrice) ? math.round(spxPrice / 5) * 5 : na
+
+// ─── HELPER FUNCTIONS ───
+f_stateName(s) => s == SM_IDLE ? "IDLE" : s == SM_EARLY ? "EARLY" : s == SM_TRADE ? "TRADE" : "EXIT"
+f_stateColor(s) => s == SM_IDLE ? color.gray : s == SM_EARLY ? color.yellow : s == SM_TRADE ? color.green : color.orange
+
+// ─── SIGNAL TYPE FLAGS ───
+isORBSig = (finalCALL and callORB) or (finalPUT and putORB)
+isTrendSig = (finalCALL and trendLongFB) or (finalPUT and trendShortFB)
+isVWAPSig = (finalCALL and vwapRejectLong) or (finalPUT and vwapRejectShort)
+
+// ─── CONFIDENCE SCORING ───
+baseScore = isORBSig ? 40 : isTrendSig ? 35 : isVWAPSig ? 30 : 0
+scoreTick = isORBSig and ((callORB and tickBull) or (putORB and tickBear)) ? 25 : 0
+scoreVIX = isORBSig and ((callORB and vixWeak) or (putORB and vixStrong)) ? 20 : 0
+scoreVol = volConfirm ? 15 : 0
+scoreTrend = isTrendSig ? ((trendDayLong or trendDayShort ? 20 : 0) + (holdAboveVWAP or holdBelowVWAP ? 10 : 0)) : 0
+scoreVWAP = isVWAPSig ? ((holdAboveVWAP or holdBelowVWAP ? 15 : 0) + (volConfirm ? 10 : 0)) : 0
+confidenceScore = math.min((baseScore + scoreTick + scoreVIX + scoreVol + scoreTrend + scoreVWAP) * (isORBSig ? 1.0 : isTrendSig ? 0.95 : 0.9), 100)
+
+// ─── CONFIDENCE DECAY ───
+hasNewSig = isORBSig or isTrendSig or isVWAPSig
+lastSigType = not na(lastSignalType) ? lastSignalType : "ORB"
+decayStartBars = hasNewSig ? (isTrendSig ? decayStartTrend : isVWAPSig ? decayStartVWAP : decayStartORB) : (lastSigType == "TREND" ? decayStartTrend : lastSigType == "VWAP" ? decayStartVWAP : lastSigType == "FAIL" ? decayStartORB : decayStartORB)
+decayPerBar = hasNewSig ? (isTrendSig ? decayRateTrend : isVWAPSig ? decayRateVWAP : decayRateORB) : (lastSigType == "TREND" ? decayRateTrend : lastSigType == "VWAP" ? decayRateVWAP : lastSigType == "FAIL" ? decayRateORB : decayRateORB)
+barsSinceSig = not na(lastSignalBar) ? bar_index - lastSignalBar : 0
+baseDecayScore = hasNewSig ? confidenceScore : (not na(lastScore) ? lastScore : 0)
+decayedScore = hasNewSig ? confidenceScore : math.max(baseDecayScore - math.max(barsSinceSig - decayStartBars, 0) * decayPerBar, 0)
+signalValid = decayedScore >= minValidScore
+
+// ─── FAIL SIGNAL FINALIZATION (don't require signalValid - trap signals are independent) ───
+failCALL := prelimFailCALL and time < endPower and not trendDayLong and not finalPUT and not orbBullConfirm and not orbBearConfirm and not holdAboveVWAP
+failPUT := prelimFailPUT and time < endPower and not trendDayShort and not finalCALL and not orbBullConfirm and not orbBearConfirm and not holdBelowVWAP
+
+// ─── SIGNAL LOGGING ───
+isFailSig = failCALL or failPUT
+hasSignal = ((finalCALL or finalPUT) and signalValid) or isFailSig
+canLogTimeGap = not na(lastSignalBar) ? bar_index - lastSignalBar > 10 : false
+if (na(lastLoggedBar) or bar_index > lastLoggedBar) and hasSignal and (na(lastStrike) or spyStrike != lastStrike or canLogTimeGap)
+    logType = isORBSig ? "ORB" : isTrendSig ? "TREND" : isVWAPSig ? "VWAP" : "FAIL"
+    logScore = isFailSig ? 50.0 : confidenceScore  // Fail signals get base score of 50
+    lastScore := logScore
+    lastScoreBar := bar_index
+    lastSignalType := logType
+    lastSignalBar := bar_index
+    lastStrike := spyStrike
+    lastLoggedBar := bar_index
+
+// ─── LIVE SCORE CALCULATION (always calculate during session) ───
+// Base points for current conditions
+liveBase = orbReady ? 20 : 0
+liveTick = tickBull or tickBear ? 20 : 0
+liveVix = (vixWeak and not na(vixClose)) or (vixStrong and not na(vixClose)) ? 15 : (na(vixClose) ? 10 : 0)
+liveVol = volConfirm ? 15 : 0
+liveVwap = holdAboveVWAP or holdBelowVWAP ? 15 : 0
+liveOrb = orbBullConfirm or orbBearConfirm ? 15 : (orbBullBroken or orbBearBroken ? 10 : 0)
+liveScore = math.min(liveBase + liveTick + liveVix + liveVol + liveVwap + liveOrb, 100)
+
+// ─── TRADE STATUS PANEL ───
+var table tradePanel = table.new(position.bottom_right, 4, 8, border_width=1, frame_color=color.new(color.gray, 50), border_color=color.new(color.gray, 50))
+displayScore = decayedScore
+hasHistory = not na(lastScore)
+if not hasSignal and hasHistory
+    ds = lastSignalType == "ORB" ? decayStartORB : lastSignalType == "TREND" ? decayStartTrend : lastSignalType == "FAIL" ? decayStartORB : decayStartVWAP
+    dr = lastSignalType == "ORB" ? decayRateORB : lastSignalType == "TREND" ? decayRateTrend : lastSignalType == "FAIL" ? decayRateORB : decayRateVWAP
+    displayScore := math.max(lastScore - math.max(bar_index - lastScoreBar - ds, 0) * dr, 0)
+
+// Determine display state
+inSession = validTime or orbActive
+finalDisplayScore = hasSignal ? decayedScore : (hasHistory and displayScore > 0) ? displayScore : liveScore
+confCol = not inSession ? color.gray : finalDisplayScore >= 75 ? color.green : finalDisplayScore >= 50 ? color.orange : color.red
+confText = not inSession ? "AFTER HOURS" : hasSignal ? "CONF: " + str.tostring(math.round(decayedScore)) : (hasHistory and displayScore > 0) ? "LAST: " + str.tostring(math.round(displayScore)) : "LIVE: " + str.tostring(math.round(liveScore))
+
+// Strike strings for display
+lblSpy = str.tostring(spyStrike)
+lblSpx = na(spxStrike) ? "—" : str.tostring(spxStrike)
+
+// Signal type for active signal section
+activeORBCall = finalCALL and isORBSig and signalValid
+activeORBPut = finalPUT and isORBSig and signalValid
+activeTrendCall = trendLongFB and isTrendSig and signalValid
+activeTrendPut = trendShortFB and isTrendSig and signalValid
+activeVWAPCall = vwapRejectLong and isVWAPSig and signalValid
+activeVWAPPut = vwapRejectShort and isVWAPSig and signalValid
+activeFailCall = failCALL
+activeFailPut = failPUT
+
+anyCallActive = activeORBCall or activeTrendCall or activeVWAPCall or activeFailCall
+anyPutActive = activeORBPut or activeTrendPut or activeVWAPPut or activeFailPut
+
+// Track active signal start bar and type
+// If we have a new active signal, update tracking
+currentActiveSigType = activeORBCall or activeORBPut ? "ORB" : activeTrendCall or activeTrendPut ? "TREND" : activeVWAPCall or activeVWAPPut ? "VWAP" : activeFailCall or activeFailPut ? "TRAP" : na
+hasCurrentActiveSignal = not na(currentActiveSigType)
+
+// Update active signal tracking when signal changes
+if hasCurrentActiveSignal
+    if na(activeSignalType) or activeSignalType != currentActiveSigType
+        activeSignalStartBar := bar_index
+        activeSignalType := currentActiveSigType
+else
+    // No active signal - check if we have an open trade to show its signal type
+    if callState == SM_TRADE and not na(callSignalType)
+        activeSignalType := callSignalType
+        activeSignalStartBar := callEntryBar
+    else if putState == SM_TRADE and not na(putSignalType)
+        activeSignalType := putSignalType
+        activeSignalStartBar := putEntryBar
+    else
+        activeSignalType := na
+        activeSignalStartBar := na
+
+// Determine active signal info for display
+activeDir = anyCallActive ? "CALL" : anyPutActive ? "PUT" : (callState == SM_TRADE ? "CALL" : putState == SM_TRADE ? "PUT" : "—")
+// Use stored signal type for open trades, or current active signal type
+activeSigType = not na(activeSignalType) ? activeSignalType : "—"
+barsSinceActive = not na(activeSignalStartBar) ? bar_index - activeSignalStartBar : 0
+// Count active signals: current active + open trades
+activeSignalCount = (hasCurrentActiveSignal ? 1 : 0) + (callState == SM_TRADE ? 1 : 0) + (putState == SM_TRADE ? 1 : 0)
+signalCount = activeSignalCount > 0 ? activeSignalCount : (not na(lastSignalBar) ? 1 : 0)
+
+// Row 0: CONF header
+table.cell(tradePanel, 0, 0, confText, text_color=color.white, bgcolor=confCol, text_halign=text.align_center)
+table.merge_cells(tradePanel, 0, 0, 3, 0)
+
+// Row 1: Column headers
+headerBg = color.new(#1a1a2e, 0)
+table.cell(tradePanel, 0, 1, "DIR", text_color=color.silver, bgcolor=headerBg, text_halign=text.align_center)
+table.cell(tradePanel, 1, 1, "STATE", text_color=color.silver, bgcolor=headerBg, text_halign=text.align_center)
+table.cell(tradePanel, 2, 1, "STATUS", text_color=color.silver, bgcolor=headerBg, text_halign=text.align_center)
+table.cell(tradePanel, 3, 1, "TARGET", text_color=color.silver, bgcolor=headerBg, text_halign=text.align_center)
+
+// Row 2: CALL data
+cellBg = color.new(#0f0f23, 0)
+callTargetText = callState == SM_TRADE ? (callT2Hit ? "T2✓" : callT1Hit ? "T1✓" : "—") : "—"
+table.cell(tradePanel, 0, 2, "CALL", text_color=color.lime, bgcolor=cellBg, text_halign=text.align_center)
+table.cell(tradePanel, 1, 2, f_stateName(callState) + " #" + str.tostring(callTradeCount), text_color=f_stateColor(callState), bgcolor=cellBg, text_halign=text.align_center)
+table.cell(tradePanel, 2, 2, callState == SM_TRADE ? "OPEN" : "CLOSED", text_color=callState == SM_TRADE ? color.lime : color.gray, bgcolor=cellBg, text_halign=text.align_center)
+table.cell(tradePanel, 3, 2, callTargetText, text_color=color.white, bgcolor=cellBg, text_halign=text.align_center)
+
+// Row 3: PUT data
+putTargetText = putState == SM_TRADE ? (putT2Hit ? "T2✓" : putT1Hit ? "T1✓" : "—") : "—"
+table.cell(tradePanel, 0, 3, "PUT", text_color=color.red, bgcolor=cellBg, text_halign=text.align_center)
+table.cell(tradePanel, 1, 3, f_stateName(putState) + " #" + str.tostring(putTradeCount), text_color=f_stateColor(putState), bgcolor=cellBg, text_halign=text.align_center)
+table.cell(tradePanel, 2, 3, putState == SM_TRADE ? "OPEN" : "CLOSED", text_color=putState == SM_TRADE ? color.lime : color.gray, bgcolor=cellBg, text_halign=text.align_center)
+table.cell(tradePanel, 3, 3, putTargetText, text_color=color.white, bgcolor=cellBg, text_halign=text.align_center)
+
+// Row 4: ACTIVE SIGNAL header
+sigHeaderBg = color.new(#16213e, 0)
+table.cell(tradePanel, 0, 4, "ACTIVE SIGNAL", text_color=color.white, bgcolor=sigHeaderBg, text_halign=text.align_center)
+table.merge_cells(tradePanel, 0, 4, 3, 4)
+
+// Row 5: Signal type and direction with strikes
+sigDetailBg = color.new(#1a1a2e, 0)
+hasActiveSignal = anyCallActive or anyPutActive or callState == SM_TRADE or putState == SM_TRADE
+sigLine1 = hasActiveSignal and activeSigType != "—" ? activeSigType + " " + activeDir + " | SPY " + lblSpy + " | SPX " + lblSpx : "NO ACTIVE SIGNAL"
+sigColor = anyCallActive or callState == SM_TRADE ? color.lime : anyPutActive or putState == SM_TRADE ? color.red : color.gray
+table.cell(tradePanel, 0, 5, sigLine1, text_color=sigColor, bgcolor=sigDetailBg, text_halign=text.align_center)
+table.merge_cells(tradePanel, 0, 5, 3, 5)
+
+// Row 6: Confidence, count, bars ago
+sigLine2 = hasActiveSignal ? "CONF " + str.tostring(math.round(finalDisplayScore)) + " | CNT " + str.tostring(signalCount) + " | " + str.tostring(barsSinceActive) + " bars ago" : "—"
+table.cell(tradePanel, 0, 6, sigLine2, text_color=color.silver, bgcolor=sigDetailBg, text_halign=text.align_center)
+table.merge_cells(tradePanel, 0, 6, 3, 6)
+
+// ─── CHART PLOTS ───
+orbMid = orbReady ? (orbHigh + orbLow) / 2 : na
+plot(spyVWAP, "VWAP", color.orange, 2)
+plot(orbActive ? orbHigh : na, "ORB High", color.green, 2)
+plot(orbActive ? orbMid : na, "ORB Mid", color.gray, 2)
+plot(orbActive ? orbLow : na, "ORB Low", color.red, 2)
+// ORB confirmation shapes
+plotshape(orbBullConfirm, "ORB Bull", shape.triangleup, location.belowbar, color.green, size=size.tiny)
+plotshape(orbBearConfirm, "ORB Bear", shape.triangledown, location.abovebar, color.red, size=size.tiny)
+// Trend Lock active indicator
+plotshape(isTrendSig and ((trendDayLong and finalCALL) or (trendDayShort and finalPUT)), "TrLock", shape.xcross, location.top, color.yellow, size=size.tiny)
+plotchar(not na(vixClose), "VIX", "V", location.top, color.green)
+plotchar(useTick and not na(tick), "TK", "T", location.top, color.orange)
+
+// ─── STATE MACHINE EXECUTION ───
+if barstate.isconfirmed or barstate.isrealtime
+    // CALL STATE MACHINE
+    callSigValid = (finalCALL and signalValid) or failCALL  // Fail signals don't need signalValid
+    if callState == SM_IDLE and callTradeCount < maxTradesPerDay and putState != SM_EARLY and callSigValid and validTime
+        callState := SM_EARLY
+        callEarlyBar := bar_index
+        alert("[EARLY CALL] " + syminfo.ticker + " @ " + str.tostring(close, "#.##"), alert.freq_once_per_bar)
+    if callState == SM_EARLY and not callSigValid
+        callState := SM_IDLE
+        callEarlyBar := na
+    if callState == SM_EARLY and not na(callEarlyBar) and bar_index - callEarlyBar >= confirmDelayBars and callSigValid
+        callState := SM_TRADE
+        callEntry := close
+        callEntryBar := bar_index
+        callTradeCount += 1
+        callSL := callEntry * (1 - stopPct/100)
+        callT1Hit := false
+        callT2Hit := false
+        callStopHit := false
+        // Store signal type when entering trade
+        callSignalType := isORBSig ? "ORB" : isTrendSig ? "TREND" : isVWAPSig ? "VWAP" : isFailSig ? "TRAP" : "UNKNOWN"
+        alert("[CALL #" + str.tostring(callTradeCount) + "] " + str.tostring(callEntry, "#.##") + " SL:" + str.tostring(callSL, "#.##"), alert.freq_once_per_bar)
+    if callState == SM_TRADE
+        cPnl = ((close - callEntry) / callEntry) * 100 / optionDelta
+        cT1 = callEntry * (1 + t1Pct/100)
+        cT2 = callEntry * (1 + t2Pct/100)
+        if not callT1Hit and close >= cT1
+            callT1Hit := true
+            alert("[T1] CALL +" + str.tostring(cPnl, "#.#") + "%", alert.freq_once_per_bar)
+        if callT1Hit and not callT2Hit and close >= cT2
+            callT2Hit := true
+            alert("[T2] CALL +" + str.tostring(cPnl, "#.#") + "%", alert.freq_once_per_bar)
+        if callT1Hit and not callT2Hit and close <= callEntry and not callStopHit
+            callStopHit := true
+            alert("[T1 PROT] CALL", alert.freq_once_per_bar)
+        if bar_index > callEntryBar and close <= callSL and not callStopHit and not callT1Hit
+            callStopHit := true
+            alert("[STOP] CALL " + str.tostring(cPnl, "#.#") + "%", alert.freq_once_per_bar)
+    if callState == SM_TRADE and (callT2Hit or callStopHit)
+        callState := SM_EXITED
+        callEntry := na
+        callSignalType := na
+    if callState == SM_EXITED and callTradeCount < maxTradesPerDay
+        callState := SM_IDLE
+    
+    // PUT STATE MACHINE
+    putSigValid = (finalPUT and signalValid) or failPUT  // Fail signals don't need signalValid
+    if putState == SM_IDLE and putTradeCount < maxTradesPerDay and callState != SM_EARLY and putSigValid and validTime
+        putState := SM_EARLY
+        putEarlyBar := bar_index
+        alert("[EARLY PUT] " + syminfo.ticker + " @ " + str.tostring(close, "#.##"), alert.freq_once_per_bar)
+    if putState == SM_EARLY and not putSigValid
+        putState := SM_IDLE
+        putEarlyBar := na
+    if putState == SM_EARLY and not na(putEarlyBar) and bar_index - putEarlyBar >= confirmDelayBars and putSigValid
+        putState := SM_TRADE
+        putEntry := close
+        putEntryBar := bar_index
+        putTradeCount += 1
+        putSL := putEntry * (1 + stopPct/100)
+        putT1Hit := false
+        putT2Hit := false
+        putStopHit := false
+        // Store signal type when entering trade
+        putSignalType := isORBSig ? "ORB" : isTrendSig ? "TREND" : isVWAPSig ? "VWAP" : isFailSig ? "TRAP" : "UNKNOWN"
+        alert("[PUT #" + str.tostring(putTradeCount) + "] " + str.tostring(putEntry, "#.##") + " SL:" + str.tostring(putSL, "#.##"), alert.freq_once_per_bar)
+    if putState == SM_TRADE
+        pPnl = ((putEntry - close) / putEntry) * 100 / optionDelta
+        pT1 = putEntry * (1 - t1Pct/100)
+        pT2 = putEntry * (1 - t2Pct/100)
+        if not putT1Hit and close <= pT1
+            putT1Hit := true
+            alert("[T1] PUT +" + str.tostring(pPnl, "#.#") + "%", alert.freq_once_per_bar)
+        if putT1Hit and not putT2Hit and close <= pT2
+            putT2Hit := true
+            alert("[T2] PUT +" + str.tostring(pPnl, "#.#") + "%", alert.freq_once_per_bar)
+        if putT1Hit and not putT2Hit and close >= putEntry and not putStopHit
+            putStopHit := true
+            alert("[T1 PROT] PUT", alert.freq_once_per_bar)
+        if bar_index > putEntryBar and close >= putSL and not putStopHit and not putT1Hit
+            putStopHit := true
+            alert("[STOP] PUT " + str.tostring(pPnl, "#.#") + "%", alert.freq_once_per_bar)
+    if putState == SM_TRADE and (putT2Hit or putStopHit)
+        putState := SM_EXITED
+        putEntry := na
+        putSignalType := na
+    if putState == SM_EXITED and putTradeCount < maxTradesPerDay
+        putState := SM_IDLE
+
+// ─── SIGNAL ALERTS ───
+if hasSignal and barstate.isconfirmed and bar_index != lastAlertBar
+    sigType = isORBSig ? "ORB" : isTrendSig ? "TR" : isVWAPSig ? "VW" : "TRAP"
+    sigDir = finalCALL ? "CALL" : finalPUT ? "PUT" : failCALL ? "CALL" : "PUT"
+    confScore = isFailSig ? 50 : math.round(decayedScore)
+    alertMsg = sigType + " " + sigDir + " SPY:" + str.tostring(spyStrike) + " SPX:" + str.tostring(spxStrike) + " CONF:" + str.tostring(confScore)
+    alert(alertMsg, alert.freq_once_per_bar_close)
+    lastAlertBar := bar_index
