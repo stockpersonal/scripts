@@ -81,6 +81,7 @@ MIDDAY_END = 13 * 60 + 30
 T1_PCT = 0.33
 T2_PCT = 0.66
 MAX_ENTRY_SLIPPAGE = 0.20
+MAX_SCORE = 6
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // FUNCTIONS
@@ -128,6 +129,9 @@ handleTradeEvent(bool isCall, string alertMsg, string labelText, color labelColo
     if canShowLabels and showLabel
         label.new(bar_index, labelY, labelText, xloc=xloc.bar_index, yloc=yloc.price, color=labelColor, style=labelStyle, textcolor=color.white, size=size.small)
 
+formatScore(int score) =>
+    "Score: " + str.tostring(score) + "/" + str.tostring(MAX_SCORE)
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // PERSISTENT STATE - Consolidated flags (one per event instead of alert/label separate)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -141,8 +145,6 @@ var bool callEarlyFiredToday = false
 var bool putEarlyFiredToday = false
 var bool callGapPending = false
 var bool putGapPending = false
-var bool callHadTrade = false
-var bool putHadTrade = false
 var float callEntryPrice = na
 var float putEntryPrice = na
 var float callStopPrice = na
@@ -191,8 +193,8 @@ configLockTime := na(configLockTime) ? timenow : configLockTime
 // ═══════════════════════════════════════════════════════════════════════════════
 // MARKET DATA
 // ═══════════════════════════════════════════════════════════════════════════════
-[m1Close, m1High, m1Low, m1Close1, m1EmaFast, m1EmaSlow, m1Vwap, m1CandleRange, m1AvgRange, m1Volume, m1VolAvg] = request.security(syminfo.tickerid, "1", [close, high, low, close[1], ta.ema(close, emaFastLen), ta.ema(close, emaSlowLen), ta.vwap, high - low, ta.sma(high - low, 20), volume, ta.sma(volume, 20)], lookahead=barmerge.lookahead_off)
-[m5EmaFast, m5EmaSlow, m5Vwap, m5Close] = request.security(syminfo.tickerid, "5", [ta.ema(close, emaFastLen), ta.ema(close, emaSlowLen), ta.vwap, close], lookahead=barmerge.lookahead_off)
+[m1Close, m1High, m1Low, m1Close1, m1EmaFast, m1EmaSlow, m1Vwap, m1CandleRange, m1AvgRange, m1Volume, m1VolAvg] = request.security(syminfo.tickerid, "1", [close, high, low, close[1], ta.ema(close, emaFastLen), ta.ema(close, emaSlowLen), ta.vwap(close), high - low, ta.sma(high - low, 20), volume, ta.sma(volume, 20)], lookahead=barmerge.lookahead_off)
+[m5EmaFast, m5EmaSlow, m5Vwap, m5Close] = request.security(syminfo.tickerid, "5", [ta.ema(close, emaFastLen), ta.ema(close, emaSlowLen), ta.vwap(close), close], lookahead=barmerge.lookahead_off)
 [vixCloseRaw, vixEmaRaw] = request.security(vixSymbol, "5", [close, ta.ema(close, 20)], lookahead=barmerge.lookahead_off)
 vixClose = useVixFilter ? vixCloseRaw : na
 vixEma = useVixFilter ? vixEmaRaw : na
@@ -341,13 +343,28 @@ if putSlippageBlocked and barstate.isconfirmed and not putSlippageAlertFired
     putSlippageAlertFired := true
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ENTRY SCORE (0–6)
+// ═══════════════════════════════════════════════════════════════════════════════
+scoreTrendCall   = confirmedUptrend ? 1 : 0
+scoreTrendPut    = confirmedDowntrend ? 1 : 0
+scoreVwapCall    = not useVwapConfirm or vwapBullish5m ? 1 : 0
+scoreVwapPut     = not useVwapConfirm or vwapBearish5m ? 1 : 0
+scoreVolume      = volumeOK ? 1 : 0
+scoreNoSpike     = not isSpike ? 1 : 0
+scoreNoMidday    = not inMiddayChop ? 1 : 0
+scoreTickCall    = not useTick or tickBullish ? 1 : 0
+scoreTickPut     = not useTick or tickBearish ? 1 : 0
+
+callEntryScore = scoreTrendCall + scoreVwapCall + scoreVolume + scoreNoSpike + scoreNoMidday + scoreTickCall
+putEntryScore = scoreTrendPut + scoreVwapPut + scoreVolume + scoreNoSpike + scoreNoMidday + scoreTickPut
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // GENERIC TRADE PROCESSING FUNCTION - Eliminates Call/Put duplication
 // ═══════════════════════════════════════════════════════════════════════════════
-processTrade(bool isCall, TradeState state, bool earlyFiredToday, bool gapPending, bool hadTrade, float entryPrice, float stopPrice, float t1Final, float t2Final, float t3Final, bool t1Hit, bool t2Hit, int entryBar, string entryMode, bool eventHandled_Early, bool eventHandled_GapPend, bool eventHandled_Entry, bool eventHandled_T1, bool eventHandled_T2, bool eventHandled_Stop, bool eventHandled_Exit, float entry, float target, float strike, string exp, bool approaching, bool breakOrGap, bool priceAtEntry, bool readyToEnter, string entryType, bool gapThrough, bool expired) =>
+processTrade(bool isCall, TradeState state, bool earlyFiredToday, bool gapPending, float entryPrice, float stopPrice, float t1Final, float t2Final, float t3Final, bool t1Hit, bool t2Hit, int entryBar, string entryMode, bool eventHandled_Early, bool eventHandled_GapPend, bool eventHandled_Entry, bool eventHandled_T1, bool eventHandled_T2, bool eventHandled_Stop, bool eventHandled_Exit, float entry, float target, float strike, string exp, bool approaching, bool breakOrGap, bool priceAtEntry, bool readyToEnter, string entryType, bool gapThrough, bool expired, int entryScore ) =>
     TradeState newState = state
     bool newEarlyFiredToday = earlyFiredToday
     bool newGapPending = gapPending
-    bool newHadTrade = hadTrade
     float newEntryPrice = entryPrice
     float newStopPrice = stopPrice
     float newT1Final = t1Final
@@ -365,6 +382,7 @@ processTrade(bool isCall, TradeState state, bool earlyFiredToday, bool gapPendin
     bool newEventHandled_Stop = eventHandled_Stop
     bool newEventHandled_Exit = eventHandled_Exit
     
+    scoreText = formatScore(entryScore)
     // Handle gap pending
     if gapThrough and inCooldown and not gapPending
         newGapPending := true
@@ -397,7 +415,6 @@ processTrade(bool isCall, TradeState state, bool earlyFiredToday, bool gapPendin
         newEntryMode := entryType
         newEntryBar := bar_index
         newGapPending := false
-        newHadTrade := true
         newState := TradeState.IN_TRADE
         newT1Hit := false
         newT2Hit := false
@@ -409,48 +426,13 @@ processTrade(bool isCall, TradeState state, bool earlyFiredToday, bool gapPendin
         newEventHandled_Exit := false
         
         // Fire entry event immediately
-        labelText = entryType == "LOTO" ? "LOTO" : (entryType == "CONFIRMED" ? "CONFIRMED" : (isCall ? "CALL" : "PUT"))
-        handleTradeEvent(isCall, "[" + (isCall ? "CALL" : "PUT") + " ENTRY][" + entryType + "] $" + str.tostring(strike) + " " + exp + " E$" + str.tostring(newEntryPrice), labelText, entryType == "LOTO" ? color.orange : (isCall ? color.green : color.new(color.red, 20)), isCall, isCall ? priceLow : priceHigh)
+        labelText = (entryType == "LOTO" ? "LOTO" : (entryType == "CONFIRMED" ? "CONFIRMED" : (isCall ? "CALL" : "PUT"))) + "\n" + scoreText
+        handleTradeEvent(isCall, "[" + (isCall ? "CALL" : "PUT") + "][" + entryType + "][" + "SCORE " + str.tostring(entryScore) + "/" + str.tostring(MAX_SCORE) + "] $" + str.tostring(strike) + " " + exp + " E$" + str.tostring(newEntryPrice), labelText, entryType == "LOTO" ? color.orange : (isCall ? color.green : color.new(color.red, 20)), isCall, isCall ? priceLow : priceHigh)
         newEventHandled_Entry := true
     
     // Handle targets and stops while in trade
     if newState == TradeState.IN_TRADE and bar_index > newEntryBar
-        // Check T1
-        if not newT1Hit and not na(newT1Final)
-            t1HitNow = isCall ? priceHigh >= newT1Final : priceLow <= newT1Final
-            if t1HitNow
-                newT1Hit := true
-                if useBreakEvenStop
-                    newStopPrice := newEntryPrice
-                if not newEventHandled_T1
-                    t1Msg = useBreakEvenStop ? " Stop→BE" : ""
-                    handleTradeEvent(isCall, "[" + (isCall ? "CALL" : "PUT") + " T1] $" + str.tostring(newT1Final, "#.##") + t1Msg, "T1", color.new(color.blue, 20), not isCall, getLabelOffset(isCall, priceHigh, priceLow))
-                    newEventHandled_T1 := true
-        
-        // Check T2
-        if newT1Hit and not newT2Hit and not na(newT2Final)
-            t2HitNow = isCall ? priceHigh >= newT2Final : priceLow <= newT2Final
-            if t2HitNow
-                newT2Hit := true
-                if useTrailingStop
-                    newStopPrice := newT1Final
-                if not newEventHandled_T2
-                    t2Msg = useTrailingStop ? " Stop→T1" : ""
-                    handleTradeEvent(isCall, "[" + (isCall ? "CALL" : "PUT") + " T2] $" + str.tostring(newT2Final, "#.##") + t2Msg, "T2", color.blue, not isCall, getLabelOffset(isCall, priceHigh, priceLow))
-                    newEventHandled_T2 := true
-        
-        // Check T3 (target hit)
-        if newT2Hit and not na(newT3Final)
-            t3Hit = isCall ? priceHigh >= newT3Final : priceLow <= newT3Final
-            if t3Hit
-                newState := TradeState.EXITED
-                // Note: Resetting earlyFiredToday allows EARLY alert to fire again after exit in same session
-                newEarlyFiredToday := false
-                if not newEventHandled_Exit
-                    handleTradeEvent(isCall, "[" + (isCall ? "CALL" : "PUT") + " TARGET HIT]", "TARGET", color.green, not isCall, getLabelOffset(isCall, priceHigh, priceLow))
-                    newEventHandled_Exit := true
-        
-        // Check stop loss (after targets)
+        // Check stop loss (before targets)
         if newState == TradeState.IN_TRADE and not newEventHandled_Exit and not na(newStopPrice)
             stopHit = isCall ? priceLow <= newStopPrice : priceHigh >= newStopPrice
             if stopHit
@@ -461,6 +443,41 @@ processTrade(bool isCall, TradeState state, bool earlyFiredToday, bool gapPendin
                     handleTradeEvent(isCall, "[" + (isCall ? "CALL" : "PUT") + " STOP HIT]", "STOP", color.red, isCall, isCall ? priceLow : priceHigh)
                     newEventHandled_Stop := true
                     newEventHandled_Exit := true
+        if newState == TradeState.IN_TRADE
+            // Check T1
+            if not newT1Hit and not na(newT1Final)
+                t1HitNow = isCall ? priceHigh >= newT1Final : priceLow <= newT1Final
+                if t1HitNow
+                    newT1Hit := true
+                    if useBreakEvenStop
+                        newStopPrice := newEntryPrice
+                    if not newEventHandled_T1
+                        t1Msg = useBreakEvenStop ? " Stop→BE" : ""
+                        handleTradeEvent(isCall, "[" + (isCall ? "CALL" : "PUT") + " T1] $" + str.tostring(newT1Final, "#.##") + t1Msg, "T1", color.new(color.blue, 20), not isCall, getLabelOffset(isCall, priceHigh, priceLow))
+                        newEventHandled_T1 := true
+            
+            // Check T2
+            if newT1Hit and not newT2Hit and not na(newT2Final)
+                t2HitNow = isCall ? priceHigh >= newT2Final : priceLow <= newT2Final
+                if t2HitNow
+                    newT2Hit := true
+                    if useTrailingStop
+                        newStopPrice := newT1Final
+                    if not newEventHandled_T2
+                        t2Msg = useTrailingStop ? " Stop→T1" : ""
+                        handleTradeEvent(isCall, "[" + (isCall ? "CALL" : "PUT") + " T2] $" + str.tostring(newT2Final, "#.##") + t2Msg, "T2", color.blue, not isCall, getLabelOffset(isCall, priceHigh, priceLow))
+                        newEventHandled_T2 := true
+            
+            // Check T3 (target hit)
+            if newT2Hit and not na(newT3Final)
+                t3Hit = isCall ? priceHigh >= newT3Final : priceLow <= newT3Final
+                if t3Hit
+                    newState := TradeState.EXITED
+                    // Note: Resetting earlyFiredToday allows EARLY alert to fire again after exit in same session
+                    newEarlyFiredToday := false
+                    if not newEventHandled_Exit
+                        handleTradeEvent(isCall, "[" + (isCall ? "CALL" : "PUT") + " TARGET HIT]", "TARGET", color.green, not isCall, getLabelOffset(isCall, priceHigh, priceLow))
+                        newEventHandled_Exit := true
     
     // Handle early state reset
     if newState == TradeState.EARLY
@@ -470,27 +487,25 @@ processTrade(bool isCall, TradeState state, bool earlyFiredToday, bool gapPendin
             newEventHandled_Early := false
     
     // Handle exited state cleanup
-    if newState == TradeState.EXITED
+    if newState == TradeState.EXITED and bar_index > newEntryBar
         newT1Hit := false
         newT2Hit := false
         newEarlyFiredToday := false
-        newHadTrade := false
         newEventHandled_Entry := false
         newEventHandled_Stop := false
         newEventHandled_Exit := false
         newState := TradeState.IDLE
     
-    [newState, newEarlyFiredToday, newGapPending, newHadTrade, newEntryPrice, newStopPrice, newT1Final, newT2Final, newT3Final, newT1Hit, newT2Hit, newEntryBar, newEntryMode, newEventHandled_Early, newEventHandled_GapPend, newEventHandled_Entry, newEventHandled_T1, newEventHandled_T2, newEventHandled_Stop, newEventHandled_Exit]
+    [newState, newEarlyFiredToday, newGapPending, newEntryPrice, newStopPrice, newT1Final, newT2Final, newT3Final, newT1Hit, newT2Hit, newEntryBar, newEntryMode, newEventHandled_Early, newEventHandled_GapPend, newEventHandled_Entry, newEventHandled_T1, newEventHandled_T2, newEventHandled_Stop, newEventHandled_Exit]
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // STATE MACHINE - Using unified trade processing function
 // ═══════════════════════════════════════════════════════════════════════════════
 // Process CALL trade - assign to temp vars first, then to var variables
-[callStateNew, callEarlyFiredTodayNew, callGapPendingNew, callHadTradeNew, callEntryPriceNew, callStopPriceNew, callT1FinalNew, callT2FinalNew, callT3FinalNew, callT1HitNew, callT2HitNew, callEntryBarNew, callEntryModeNew, callEventHandled_EarlyNew, callEventHandled_GapPendNew, callEventHandled_EntryNew, callEventHandled_T1New, callEventHandled_T2New, callEventHandled_StopNew, callEventHandled_ExitNew] = processTrade(true, callState, callEarlyFiredToday, callGapPending, callHadTrade, callEntryPrice, callStopPrice, callT1Final, callT2Final, callT3Final, callT1Hit, callT2Hit, callEntryBar, callEntryMode, callEventHandled_Early, callEventHandled_GapPend, callEventHandled_Entry, callEventHandled_T1, callEventHandled_T2, callEventHandled_Stop, callEventHandled_Exit, callEntry, callTargetPrice, callStrike, callExp, callApproaching, callBreakOrGap, callPriceAtEntry, callReadyToEnter, callEntryType, callGapThrough, callExpired)
+[callStateNew, callEarlyFiredTodayNew, callGapPendingNew, callEntryPriceNew, callStopPriceNew, callT1FinalNew, callT2FinalNew, callT3FinalNew, callT1HitNew, callT2HitNew, callEntryBarNew, callEntryModeNew, callEventHandled_EarlyNew, callEventHandled_GapPendNew, callEventHandled_EntryNew, callEventHandled_T1New, callEventHandled_T2New, callEventHandled_StopNew, callEventHandled_ExitNew] = processTrade(true, callState, callEarlyFiredToday, callGapPending, callEntryPrice, callStopPrice, callT1Final, callT2Final, callT3Final, callT1Hit, callT2Hit, callEntryBar, callEntryMode, callEventHandled_Early, callEventHandled_GapPend, callEventHandled_Entry, callEventHandled_T1, callEventHandled_T2, callEventHandled_Stop, callEventHandled_Exit, callEntry, callTargetPrice, callStrike, callExp, callApproaching, callBreakOrGap, callPriceAtEntry, callReadyToEnter, callEntryType, callGapThrough, callExpired, callEntryScore)
 callState := callStateNew
 callEarlyFiredToday := callEarlyFiredTodayNew
 callGapPending := callGapPendingNew
-callHadTrade := callHadTradeNew
 callEntryPrice := callEntryPriceNew
 callStopPrice := callStopPriceNew
 callT1Final := callT1FinalNew
@@ -509,11 +524,10 @@ callEventHandled_Stop := callEventHandled_StopNew
 callEventHandled_Exit := callEventHandled_ExitNew
 
 // Process PUT trade - assign to temp vars first, then to var variables
-[putStateNew, putEarlyFiredTodayNew, putGapPendingNew, putHadTradeNew, putEntryPriceNew, putStopPriceNew, putT1FinalNew, putT2FinalNew, putT3FinalNew, putT1HitNew, putT2HitNew, putEntryBarNew, putEntryModeNew, putEventHandled_EarlyNew, putEventHandled_GapPendNew, putEventHandled_EntryNew, putEventHandled_T1New, putEventHandled_T2New, putEventHandled_StopNew, putEventHandled_ExitNew] = processTrade(false, putState, putEarlyFiredToday, putGapPending, putHadTrade, putEntryPrice, putStopPrice, putT1Final, putT2Final, putT3Final, putT1Hit, putT2Hit, putEntryBar, putEntryMode, putEventHandled_Early, putEventHandled_GapPend, putEventHandled_Entry, putEventHandled_T1, putEventHandled_T2, putEventHandled_Stop, putEventHandled_Exit, putEntry, putTargetPrice, putStrike, putExp, putApproaching, putBreakOrGap, putPriceAtEntry, putReadyToEnter, putEntryType, putGapThrough, putExpired)
+[putStateNew, putEarlyFiredTodayNew, putGapPendingNew, putEntryPriceNew, putStopPriceNew, putT1FinalNew, putT2FinalNew, putT3FinalNew, putT1HitNew, putT2HitNew, putEntryBarNew, putEntryModeNew, putEventHandled_EarlyNew, putEventHandled_GapPendNew, putEventHandled_EntryNew, putEventHandled_T1New, putEventHandled_T2New, putEventHandled_StopNew, putEventHandled_ExitNew] = processTrade(false, putState, putEarlyFiredToday, putGapPending, putEntryPrice, putStopPrice, putT1Final, putT2Final, putT3Final, putT1Hit, putT2Hit, putEntryBar, putEntryMode, putEventHandled_Early, putEventHandled_GapPend, putEventHandled_Entry, putEventHandled_T1, putEventHandled_T2, putEventHandled_Stop, putEventHandled_Exit, putEntry, putTargetPrice, putStrike, putExp, putApproaching, putBreakOrGap, putPriceAtEntry, putReadyToEnter, putEntryType, putGapThrough, putExpired, putEntryScore)
 putState := putStateNew
 putEarlyFiredToday := putEarlyFiredTodayNew
 putGapPending := putGapPendingNew
-putHadTrade := putHadTradeNew
 putEntryPrice := putEntryPriceNew
 putStopPrice := putStopPriceNew
 putT1Final := putT1FinalNew
@@ -529,6 +543,7 @@ putEventHandled_Entry := putEventHandled_EntryNew
 putEventHandled_T1 := putEventHandled_T1New
 putEventHandled_T2 := putEventHandled_T2New
 putEventHandled_Stop := putEventHandled_StopNew
+putEventHandled_Exit := putEventHandled_ExitNew
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SYSTEM & PROTECTION EVENTS
@@ -628,8 +643,6 @@ if ta.change(time("D", "America/New_York")) != 0
     putEntryBar := na
     putEarlyFiredToday := false
     putGapPending := false
-    callHadTrade := false
-    putHadTrade := false
     callSpikeAlertFired := false
     putSpikeAlertFired := false
     callVolumeAlertFired := false
