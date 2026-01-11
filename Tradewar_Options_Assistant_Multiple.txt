@@ -1,53 +1,62 @@
 //@version=5
 indicator("Tradewar Options Assistant Multiple", overlay=true, dynamic_requests=true, max_labels_count=500)
-
+// INPUT PARAMETERS - Ticker configurations (5 tickers supported)
 group1 = "═══ TICKER 1 ═══"
 t1_on   = input.bool(true, "Enable", group=group1)
-t1_sym  = input.string("GOOGL", "Symbol", group=group1)
-t1_k    = input.float(327.5, "Strike ($)", group=group1, step=1)
+t1_dir  = input.string("CALL", "Direction", options=["CALL","PUT"], group=group1)
+t1_sym  = input.string("OKLO", "Symbol", group=group1)
+t1_k    = input.float(113, "Strike ($)", group=group1, step=1)
 t1_exp  = input.string("JAN-09-26", "Expiry", group=group1)
-t1_tgt  = input.float(332.5, "Target Price ($)", group=group1, step=0.01, tooltip="Final target price (T3) - script calculates T1/T2 automatically")
-t1_res  = input.float(327.69, "Entry: Breaks ($)", group=group1, step=0.01)
+t1_tgt  = input.float(125, "Target Price ($)", group=group1, step=0.01, tooltip="Final target price (T2) - script calculates T1/T2 automatically")
+t1_res  = input.float(116.57, "Entry: Breaks ($)", group=group1, step=0.01)
 
 group2 = "═══ TICKER 2 ═══"
 t2_on   = input.bool(true, "Enable", group=group2)
-t2_sym  = input.string("F", "Symbol", group=group2)
-t2_k    = input.float(13.5, "Strike ($)", group=group2, step=1)
+t2_dir  = input.string("CALL", "Direction", options=["CALL","PUT"], group=group2)
+t2_sym  = input.string("TLRY", "Symbol", group=group2)
+t2_k    = input.float(10, "Strike ($)", group=group2, step=1)
 t2_exp  = input.string("JAN-09-26", "Expiry", group=group2)
-t2_tgt  = input.float(14.1, "Target Price ($)", group=group2, step=0.01, tooltip="Final target price (T3)")
-t2_res  = input.float(13.85, "Entry: Breaks ($)", group=group2, step=0.01)
+t2_tgt  = input.float(11, "Target Price ($)", group=group2, step=0.01, tooltip="Final target price (T2)")
+t2_res  = input.float(10.45, "Entry: Breaks ($)", group=group2, step=0.01)
 
 group3 = "═══ TICKER 3 ═══"
 t3_on   = input.bool(true, "Enable", group=group3)
-t3_sym  = input.string("GM", "Symbol", group=group3)
-t3_k    = input.float(82, "Strike ($)", group=group3, step=1)
+t3_dir  = input.string("CALL", "Direction", options=["CALL","PUT"], group=group3)
+t3_sym  = input.string("ABNB", "Symbol", group=group3)
+t3_k    = input.float(138, "Strike ($)", group=group3, step=1)
 t3_exp  = input.string("JAN-09-26", "Expiry", group=group3)
-t3_tgt  = input.float(83.25, "Target Price ($)", group=group3, step=0.01, tooltip="Final target price (T3)")
-t3_res  = input.float(82.75, "Entry: Breaks ($)", group=group3, step=0.01)
+t3_tgt  = input.float(141.5, "Target Price ($)", group=group3, step=0.01, tooltip="Final target price (T2)")
+t3_res  = input.float(140, "Entry: Breaks ($)", group=group3, step=0.01)
 
 group4 = "═══ TICKER 4 ═══"
 t4_on   = input.bool(true, "Enable", group=group4)
-t4_sym  = input.string("ROKU", "Symbol", group=group4)
-t4_k    = input.float(113, "Strike ($)", group=group4, step=1)
+t4_dir  = input.string("CALL", "Direction", options=["CALL","PUT"], group=group4)
+t4_sym  = input.string("CLF", "Symbol", group=group4)
+t4_k    = input.float(12, "Strike ($)", group=group4, step=1)
 t4_exp  = input.string("JAN-09-26", "Expiry", group=group4)
-t4_tgt  = input.float(116, "Target Price ($)", group=group4, step=0.01, tooltip="Final target price (T3)")
-t4_res  = input.float(113.5, "Entry: Breaks ($)", group=group4, step=0.01)
+t4_tgt  = input.float(13, "Target Price ($)", group=group4, step=0.01, tooltip="Final target price (T2)")
+t4_res  = input.float(12.68, "Entry: Breaks ($)", group=group4, step=0.01)
 
 group5 = "═══ TICKER 5 ═══"
 t5_on   = input.bool(true, "Enable", group=group5)
-t5_sym  = input.string("OXY", "Symbol", group=group5)
-t5_k    = input.float(41, "Strike ($)", group=group5, step=1)
+t5_dir  = input.string("CALL", "Direction", options=["CALL","PUT"], group=group5)
+t5_sym  = input.string("LUV", "Symbol", group=group5)
+t5_k    = input.float(43.5, "Strike ($)", group=group5, step=1)
 t5_exp  = input.string("JAN-09-26", "Expiry", group=group5)
-t5_tgt  = input.float(41.75, "Target Price ($)", group=group5, step=0.01, tooltip="Final target price (T3)")
-t5_res  = input.float(41.28, "Entry: Breaks ($)", group=group5, step=0.01)
+t5_tgt  = input.float(46, "Target Price ($)", group=group5, step=0.01, tooltip="Final target price (T2)")
+t5_res  = input.float(44.6, "Entry: Breaks ($)", group=group5, step=0.01)
 
+// Timing settings
 groupSettings = "═══ SETTINGS ═══"
 cooldownMin     = input.int(2, "Cooldown After Open (min)", group=groupSettings, minval=1, maxval=10)
 lotoWindowEnd   = input.int(10, "LOTO Window End (min)", group=groupSettings, minval=3, maxval=15)
 confirmedStart  = input.int(5, "CONFIRMED Start (min)", group=groupSettings, minval=3, maxval=15)
 earlyAlertDist  = input.float(0.50, "Early Alert Distance (%)", group=groupSettings, minval=0.10, maxval=2.00, step=0.10, tooltip="% below resistance to trigger early alert")
 stopOffsetPct   = input.float(0.30, "Stop Offset (%)", group=groupSettings, minval=0.10, maxval=1.00, step=0.05, tooltip="% below entry for stop loss")
+partialExitPct  = input.float(50, "Partial Exit % at T1", group=groupSettings, minval=10, maxval=90, step=5, tooltip="% of position to trim at T1, runners continue to T2")
+trailPct         = input.float(0.25, "Trailing Stop % (after T1)", group=groupSettings, minval=0.1, maxval=1.0, step=0.05, tooltip="% trailing stop distance after T1 hit")
 
+// Filter settings
 groupFilters = "═══ FILTERS ═══"
 useTrendFilter  = input.bool(true, "Trend Filter (EMA 9 > 21)", group=groupFilters, tooltip="Recommended: ON - Prevents counter-trend entries")
 emaFastLen      = input.int(9, "Fast EMA", group=groupFilters, minval=5, maxval=20, inline="ema")
@@ -55,6 +64,7 @@ emaSlowLen      = input.int(21, "Slow EMA", group=groupFilters, minval=10, maxva
 useVwapConfirm  = input.bool(false, "Require VWAP Confirmation", group=groupFilters, tooltip="OFF for catalyst plays - news stocks often gap above VWAP")
 useLotoAlert    = input.bool(true, "Enable LOTO Alert (Fast 1-min)", group=groupFilters)
 
+// Protection settings
 groupProtection = "═══ PROTECTION ═══"
 useSpikeFilter      = input.bool(true, "Block Entry on Spike Candles", group=groupProtection, tooltip="Recommended: ON - Avoids chasing extended candles")
 spikeMultiplier     = input.float(2.5, "Spike Threshold (x Avg Range)", group=groupProtection, minval=1.5, maxval=4.0, step=0.5, tooltip="Higher = more lenient for news spikes")
@@ -62,6 +72,7 @@ useVolumeConfirm    = input.bool(false, "Require Volume Confirmation", group=gro
 volumeMultiplier    = input.float(1.0, "Volume Threshold (x Avg)", group=groupProtection, minval=0.5, maxval=3.0, step=0.1)
 useMiddayFilter     = input.bool(false, "Block Midday Chop (12:00-13:30 ET)", group=groupProtection, tooltip="OFF for catalyst plays - news can break out anytime")
 
+// Alert & visual settings
 groupAlerts = "═══ ALERT PREFERENCES ═══"
 showWarningAlerts = input.bool(true, "Show Warning Alerts", group=groupAlerts, tooltip="GAP PENDING alerts")
 
@@ -69,12 +80,28 @@ groupVisual = "═══ VISUAL SETTINGS ═══"
 showLabels      = input.bool(true, "Show Chart Labels", group=groupVisual, tooltip="Display visual labels on chart for entries, targets, and stops")
 showLevelLines  = input.bool(true, "Show Entry/Target Lines", group=groupVisual, tooltip="Display horizontal lines for entry and target levels (only on matching ticker chart)")
 
+// TYPE DEFINITIONS
+enum TradeDir
+    CALL
+    PUT
+
+enum TradeEvent
+    NONE
+    EARLY
+    ENTRY
+    T1
+    T2
+    STOP
+    GAP_PENDING
+    FORCE_EXIT
+
 enum TradeState
     IDLE
     EARLY
     IN_TRADE
     EXITED
 
+// CONSTANTS
 MARKET_OPEN_HOUR  = 9
 MARKET_OPEN_MIN   = 30
 MARKET_CLOSE_HOUR = 16
@@ -86,16 +113,17 @@ FORCE_EXIT_MIN    = 5
 MIDDAY_START      = 12 * 60
 MIDDAY_END        = 13 * 60 + 30
 
-T1_PCT = 0.33
-T2_PCT = 0.66
-T3_PCT = 1.00
+T1_PCT = 0.40
+T2_PCT = 0.60
 
 MAX_ENTRY_SLIPPAGE = 0.15
 
+// HELPER FUNCTIONS - Parse month abbreviation to number (JAN -> 1, FEB -> 2, etc.)
 parseMonth(m) =>
     u = str.upper(str.trim(m))
     u == "JAN" ? 1 : u == "FEB" ? 2 : u == "MAR" ? 3 : u == "APR" ? 4 : u == "MAY" ? 5 : u == "JUN" ? 6 : u == "JUL" ? 7 : u == "AUG" ? 8 : u == "SEP" ? 9 : u == "OCT" ? 10 : u == "NOV" ? 11 : u == "DEC" ? 12 : 0
 
+// Parse expiry string (format: "JAN-09-26") to timestamp, handles 2-digit years
 parseExp(s) =>
     result = float(na)
     if str.length(s) >= 9
@@ -110,8 +138,13 @@ parseExp(s) =>
                 result := timestamp(int(yearNum), monthNum, int(dayNum), 16, 0, 0)
     result
 
+// Format days to expiration as string
 dteStr(d) => d == 0 ? "0DTE" : d == 1 ? "1DTE" : str.tostring(d) + "DTE"
 
+// Format time component with leading zero
+formatTimeComponent(val) => (val < 10 ? "0" : "") + str.tostring(val)
+
+// MARKET SESSION & TIME CALCULATIONS
 var string SESSION_STRING = str.format("{0,number,00}{1,number,00}-{2,number,00}{3,number,00}", MARKET_OPEN_HOUR, MARKET_OPEN_MIN, MARKET_CLOSE_HOUR, MARKET_CLOSE_MIN)
 currentHour      = hour(time, "America/New_York")
 currentMin       = minute(time, "America/New_York")
@@ -120,7 +153,7 @@ isRTH            = not na(time(timeframe.period, SESSION_STRING, "America/New_Yo
 minutesSinceOpen = minutesET - MARKET_OPEN
 minutesToClose   = MARKET_CLOSE - minutesET
 
-inCooldown    = isRTH and minutesSinceOpen >= 0 and minutesSinceOpen < cooldownMin
+inCooldown    = isRTH and minutesSinceOpen < cooldownMin
 lotoWindowOK  = minutesSinceOpen >= cooldownMin and minutesSinceOpen < lotoWindowEnd
 confirmedOK   = minutesSinceOpen >= confirmedStart
 approachingOK = minutesSinceOpen >= cooldownMin
@@ -128,19 +161,20 @@ approachingOK = minutesSinceOpen >= cooldownMin
 inMiddayChop = useMiddayFilter and minutesET >= MIDDAY_START and minutesET < MIDDAY_END
 
 isLiveBar = barstate.isrealtime
-
+isConfirmedBar = barstate.isconfirmed
+isLastBar = barstate.islast
 chartTicker = str.upper(syminfo.ticker)
 
 var int configLockTime = na
 configLockTime := na(configLockTime) ? timenow : configLockTime
 
-processTicker(tickerIdx, enabled, sym, expTs, entryLevel, targetPrice, stateArr, entryModeArr, entryBarArr, entryPriceArr, stopPriceArr, t1FinalArr, t2FinalArr, t3FinalArr, t1HitArr, t2HitArr, t3HitArr, earlyFiredArr, gapPendingArr, hadTradeArr) =>
+// MAIN PROCESSING FUNCTION - Core ticker processing: handles state machine, entry/exit logic, and target tracking. Returns: [event, entryMode, entryPrice, stopPrice, t1Final, t2Final, dte, currentPrice, wasFirstTrade]
+processTicker(tickerIdx, enabled, sym, expTs, entryLevel, targetPrice, dir, stateArr, entryModeArr, entryBarArr, entryPriceArr, stopPriceArr, t1FinalArr, t2FinalArr, t1HitArr, t2HitArr, earlyFiredArr, gapPendingArr, hadTradeArr, partialTakenArr) =>
     
     evt_early    = false
     evt_entry    = false
     evt_t1       = false
     evt_t2       = false
-    evt_t3       = false
     evt_stop     = false
     evt_gapPend  = false
     evt_forceExit = false
@@ -149,26 +183,26 @@ processTicker(tickerIdx, enabled, sym, expTs, entryLevel, targetPrice, stateArr,
     returnStopPrice = 0.0
     returnT1 = 0.0
     returnT2 = 0.0
-    returnT3 = 0.0
     returnDte = 999
     returnPrice = 0.0
     returnWasFirstTrade = false
+    returnEvent = TradeEvent.NONE
     
     if enabled and entryLevel > 0
+        // Fetch multi-timeframe data
         [tickerClose, tickerHigh, tickerLow, tickerClose1, tickerEmaFast, tickerEmaSlow, tickerVwap, tickerRange, tickerAvgRange, tickerVol, tickerVolAvg] = request.security(sym, "1", [close, high, low, close[1], ta.ema(close, emaFastLen), ta.ema(close, emaSlowLen), ta.vwap, high - low, ta.sma(high - low, 20), volume, ta.sma(volume, 20)], lookahead=barmerge.lookahead_off)
-        
         [m5EmaFast, m5EmaSlow, m5Vwap, m5Close] = request.security(sym, "5", [ta.ema(close, emaFastLen), ta.ema(close, emaSlowLen), ta.vwap, close])
         
         returnPrice := tickerClose
+        isCall = dir == TradeDir.CALL
         
+        // Calculate expiry and force exit conditions
         dte = na(expTs) ? 1 : math.max(0, math.floor((expTs - time) / 86400000))
         returnDte := dte
         isExpired = not na(expTs) and time >= expTs
-        is0DTE = dte == 0
-        is1DTE = dte == 1
+        forceExit = ((dte == 0 or dte == 1) and minutesToClose <= FORCE_EXIT_MIN and minutesToClose >= 0)
         
-        forceExit = (is0DTE or is1DTE) and minutesToClose <= FORCE_EXIT_MIN
-        
+        // Load state from arrays
         state = array.get(stateArr, tickerIdx)
         entryMode = array.get(entryModeArr, tickerIdx)
         entryBar = array.get(entryBarArr, tickerIdx)
@@ -176,116 +210,152 @@ processTicker(tickerIdx, enabled, sym, expTs, entryLevel, targetPrice, stateArr,
         stopPrice = array.get(stopPriceArr, tickerIdx)
         t1Final = array.get(t1FinalArr, tickerIdx)
         t2Final = array.get(t2FinalArr, tickerIdx)
-        t3Final = array.get(t3FinalArr, tickerIdx)
         t1Hit = array.get(t1HitArr, tickerIdx)
         t2Hit = array.get(t2HitArr, tickerIdx)
-        t3Hit = array.get(t3HitArr, tickerIdx)
         earlyFired = array.get(earlyFiredArr, tickerIdx)
         gapPending = array.get(gapPendingArr, tickerIdx)
         hadTrade = array.get(hadTradeArr, tickerIdx)
+        partialTaken = array.get(partialTakenArr, tickerIdx)
         justExited = state == TradeState.EXITED
         
+        // Entry filters
         isSpike = useSpikeFilter and not na(tickerAvgRange) and tickerRange > tickerAvgRange * spikeMultiplier
         volumeOK = not useVolumeConfirm or (bar_index > 20 and not na(tickerVolAvg) and tickerVol > tickerVolAvg * volumeMultiplier)
         
-        emaBullish1m = tickerEmaFast > tickerEmaSlow
-        vwapBullish1m = tickerClose > tickerVwap
-        lotoUptrend = emaBullish1m and (not useVwapConfirm or vwapBullish1m)
+        // Trend analysis (direction-aware)
+        emaTrend1m = isCall ? (tickerEmaFast > tickerEmaSlow) : (tickerEmaFast < tickerEmaSlow)
+        vwapTrend1m = isCall ? (tickerClose > tickerVwap) : (tickerClose < tickerVwap)
+        lotoTrendOK = emaTrend1m and (not useVwapConfirm or vwapTrend1m)
         
-        emaBullish5m = m5EmaFast > m5EmaSlow
-        vwapBullish5m = m5Close > m5Vwap
-        confirmedUptrend = emaBullish5m and (not useVwapConfirm or vwapBullish5m)
+        emaTrend5m = isCall ? (m5EmaFast > m5EmaSlow) : (m5EmaFast < m5EmaSlow)
+        vwapTrend5m = isCall ? (m5Close > m5Vwap) : (m5Close < m5Vwap)
+        confirmedTrendOK = emaTrend5m and (not useVwapConfirm or vwapTrend5m)
         
-        pureDowntrend5m = m5EmaFast < m5EmaSlow and m5Close < m5Vwap
+        pureCounterTrend5m = isCall ? (m5EmaFast < m5EmaSlow and m5Close < m5Vwap) : (m5EmaFast > m5EmaSlow and m5Close > m5Vwap)
         
-        lotoAllowed = useLotoAlert and lotoUptrend and not pureDowntrend5m and not hadTrade
-        confirmedAllowed = (not useTrendFilter or confirmedUptrend) and not pureDowntrend5m
+        lotoAllowed = useLotoAlert and lotoTrendOK and not pureCounterTrend5m and not hadTrade
+        confirmedAllowed = (not useTrendFilter or confirmedTrendOK) and not pureCounterTrend5m
         
+        // Entry signal detection
         earlyDist = entryLevel * (earlyAlertDist / 100)
-        earlyLevelPrice = entryLevel - earlyDist
-        approaching = tickerClose < entryLevel and tickerClose >= earlyLevelPrice and approachingOK
+        earlyLevelPrice = isCall ? entryLevel - earlyDist : entryLevel + earlyDist
+        approaching = isCall ? (tickerClose < entryLevel and tickerClose >= earlyLevelPrice) : (tickerClose > entryLevel and tickerClose <= earlyLevelPrice)
+        approaching := approaching and approachingOK
         
-        priceBreak = tickerClose >= entryLevel and tickerClose1 < entryLevel
+        priceBreak = isCall ? (tickerClose >= entryLevel and tickerClose1 < entryLevel) : (tickerClose <= entryLevel and tickerClose1 > entryLevel)
         
         isFirstBarOfDay = isRTH and not isRTH[1]
-        gapThrough = isFirstBarOfDay and tickerClose >= entryLevel
+        gapThrough = isFirstBarOfDay and (isCall ? tickerClose >= entryLevel : tickerClose <= entryLevel)
         
-        breakOrGap = priceBreak or gapThrough or (gapPending and tickerClose >= entryLevel)
+        localGapPending = gapPending
+        if gapThrough and (inCooldown or (minutesSinceOpen == cooldownMin)) and not gapPending
+            localGapPending := true
+            evt_gapPend := true
+        
+        gapPendingExpired = localGapPending and not inCooldown and minutesSinceOpen >= cooldownMin
+        if gapPendingExpired
+            localGapPending := false
+        
+        breakOrGap = priceBreak or gapThrough or (localGapPending and (isCall ? tickerClose >= entryLevel : tickerClose <= entryLevel)) or (gapPendingExpired and (isCall ? tickerClose >= entryLevel : tickerClose <= entryLevel))
         
         maxSlip = entryLevel * (MAX_ENTRY_SLIPPAGE / 100)
-        slippageOK = tickerClose <= entryLevel + maxSlip
+        slippageOK = isCall ? tickerClose <= entryLevel + maxSlip : tickerClose >= entryLevel - maxSlip
         
-        validTarget = targetPrice > entryLevel
+        validTarget = isCall ? targetPrice > entryLevel : targetPrice < entryLevel
         
+        // Entry conditions
         canEnter = breakOrGap and isRTH and not isExpired and not isSpike and volumeOK and not inMiddayChop and slippageOK and not forceExit and validTarget
         lotoReady = canEnter and lotoWindowOK and lotoAllowed
         confirmedReady = canEnter and confirmedOK and confirmedAllowed
         readyToEnter = (state == TradeState.IDLE or state == TradeState.EARLY) and (lotoReady or confirmedReady)
         entryType = lotoReady ? "LOTO" : "CONFIRMED"
         
-        if gapThrough and (inCooldown or (minutesSinceOpen == cooldownMin)) and not gapPending
-            gapPending := true
-            evt_gapPend := true
-        
+        // State transitions
         if state == TradeState.IDLE and approaching and isRTH and not isExpired and not earlyFired
             state := TradeState.EARLY
             earlyFired := true
             evt_early := true
         
-        if readyToEnter
+        if readyToEnter and not justExited
             returnWasFirstTrade := not hadTrade
+            
             entryPrice := entryLevel
             stopOffset = entryLevel * (stopOffsetPct / 100)
-            stopPrice := entryPrice - stopOffset
-            targetDist = targetPrice - entryLevel
-            t1Final := entryPrice + (targetDist * T1_PCT)
-            t2Final := entryPrice + (targetDist * T2_PCT)
-            t3Final := entryPrice + (targetDist * T3_PCT)
+            stopPrice := isCall ? entryPrice - stopOffset : entryPrice + stopOffset
+            
+            targetDist = math.abs(targetPrice - entryLevel)
+            t1Final := isCall ? entryPrice + (targetDist * T1_PCT) : entryPrice - (targetDist * T1_PCT)
+            t2Final := isCall ? entryPrice + (targetDist * T2_PCT) : entryPrice - (targetDist * T2_PCT)
+            
             entryMode := entryType
             entryBar := bar_index
-            gapPending := false
+            localGapPending := false
             hadTrade := true
             state := TradeState.IN_TRADE
             evt_entry := true
         
-        if state == TradeState.IN_TRADE and bar_index > entryBar
-            if not t1Hit and not na(t1Final) and tickerHigh >= t1Final
+        // Target tracking (sequential: T1 must hit before T2)
+        if state == TradeState.IN_TRADE and bar_index >= entryBar
+            t1HitCondition = isCall ? (not na(t1Final) and t1Final > 0 and tickerHigh >= t1Final) : (not na(t1Final) and t1Final > 0 and tickerLow <= t1Final)
+            if not t1Hit and t1HitCondition
                 t1Hit := true
+                partialTaken := true
                 evt_t1 := true
             
-            if t1Hit and not t2Hit and not na(t2Final) and tickerHigh >= t2Final
+            // Trailing stop after T1 hit
+            if t1Hit and not t2Hit
+                trailOffset = entryPrice * (trailPct / 100)
+                newTrailStop = isCall ? tickerClose - trailOffset : tickerClose + trailOffset
+                stopPrice := isCall ? math.max(stopPrice, newTrailStop) : math.min(stopPrice, newTrailStop)
+            
+            t2HitCondition = isCall ? (not na(t2Final) and t2Final > 0 and tickerHigh >= t2Final) : (not na(t2Final) and t2Final > 0 and tickerLow <= t2Final)
+            if t1Hit and not t2Hit and t2HitCondition
                 t2Hit := true
                 evt_t2 := true
                 if not na(t1Final) and not na(stopPrice)
-                    stopPrice := math.max(stopPrice, t1Final)
-            
-            if t2Hit and not t3Hit and not na(t3Final) and tickerHigh >= t3Final
-                t3Hit := true
+                    stopPrice := isCall ? math.max(t1Final, stopPrice) : math.min(t1Final, stopPrice)
                 state := TradeState.EXITED
-                evt_t3 := true
         
-        if state == TradeState.IN_TRADE and bar_index > entryBar and not na(stopPrice) and tickerLow <= stopPrice
+        // Exit conditions
+        stopHitCondition = isCall ? (not na(stopPrice) and tickerLow <= stopPrice) : (not na(stopPrice) and tickerHigh >= stopPrice)
+        if state == TradeState.IN_TRADE and bar_index >= entryBar and stopHitCondition
             state := TradeState.EXITED
             evt_stop := true
         
-        if state == TradeState.IN_TRADE and isExpired
+        if state == TradeState.IN_TRADE and (isExpired or forceExit)
             state := TradeState.EXITED
             evt_forceExit := true
         
-        if forceExit and state == TradeState.IN_TRADE
-            state := TradeState.EXITED
-            evt_forceExit := true
-        
-        if justExited and bar_index > entryBar
+        // State resets
+        if justExited
             t1Hit := false
             t2Hit := false
-            t3Hit := false
+            partialTaken := false
             state := TradeState.IDLE
         
         dropThreshold = entryLevel * (DROP_THRESHOLD / 100)
-        if state == TradeState.EARLY and tickerClose < earlyLevelPrice - dropThreshold
+        earlyDropCondition = isCall ? tickerClose < earlyLevelPrice - dropThreshold : tickerClose > earlyLevelPrice + dropThreshold
+        if state == TradeState.EARLY and earlyDropCondition
             state := TradeState.IDLE
+            earlyFired := false
         
+        // Event prioritization (single event per bar)
+        if evt_gapPend
+            returnEvent := TradeEvent.GAP_PENDING
+        else if evt_early
+            returnEvent := TradeEvent.EARLY
+        else if evt_entry
+            returnEvent := TradeEvent.ENTRY
+        else if evt_t1
+            returnEvent := TradeEvent.T1
+        else if evt_t2
+            returnEvent := TradeEvent.T2
+        else if evt_stop
+            returnEvent := TradeEvent.STOP
+        else if evt_forceExit
+            returnEvent := TradeEvent.FORCE_EXIT
+        
+        // Persist state back to arrays
         array.set(stateArr, tickerIdx, state)
         array.set(entryModeArr, tickerIdx, entryMode)
         array.set(entryBarArr, tickerIdx, entryBar)
@@ -293,28 +363,95 @@ processTicker(tickerIdx, enabled, sym, expTs, entryLevel, targetPrice, stateArr,
         array.set(stopPriceArr, tickerIdx, stopPrice)
         array.set(t1FinalArr, tickerIdx, t1Final)
         array.set(t2FinalArr, tickerIdx, t2Final)
-        array.set(t3FinalArr, tickerIdx, t3Final)
         array.set(t1HitArr, tickerIdx, t1Hit)
         array.set(t2HitArr, tickerIdx, t2Hit)
-        array.set(t3HitArr, tickerIdx, t3Hit)
         array.set(earlyFiredArr, tickerIdx, earlyFired)
-        array.set(gapPendingArr, tickerIdx, gapPending)
+        array.set(gapPendingArr, tickerIdx, localGapPending)
         array.set(hadTradeArr, tickerIdx, hadTrade)
+        array.set(partialTakenArr, tickerIdx, partialTaken)
         
         returnEntryMode := entryMode
         returnEntryPrice := entryPrice
         returnStopPrice := stopPrice
         returnT1 := t1Final
         returnT2 := t2Final
-        returnT3 := t3Final
     
-    [evt_early, evt_entry, evt_t1, evt_t2, evt_t3, evt_stop, evt_gapPend, evt_forceExit, returnEntryMode, returnEntryPrice, returnStopPrice, returnT1, returnT2, returnT3, returnDte, returnPrice, returnWasFirstTrade]
+    [returnEvent, returnEntryMode, returnEntryPrice, returnStopPrice, returnT1, returnT2, returnDte, returnPrice, returnWasFirstTrade]
 
-var float t1_expTs = parseExp(t1_exp)
-var float t2_expTs = parseExp(t2_exp)
-var float t3_expTs = parseExp(t3_exp)
-var float t4_expTs = parseExp(t4_exp)
-var float t5_expTs = parseExp(t5_exp)
+// EVENT HANDLER FUNCTION - Unified event handler: combines alerts and labels in one place. Only processes events on confirmed bars to prevent spam
+handleEvent(evt, dir, sym, k, exp, mode, entryLevel, price, stop, t1, t2, dte, cur, first, matchChart) =>
+    side = dir == TradeDir.CALL ? "C" : "P"
+    verbBreak = dir == TradeDir.CALL ? "Breaks ABOVE" : "Breaks BELOW"
+    
+    if evt != TradeEvent.NONE and (isConfirmedBar or isLastBar)
+        if evt == TradeEvent.GAP_PENDING
+            if isLiveBar and showWarningAlerts
+                alert("[GAP PENDING] " + sym + " | $" + str.tostring(k, "#.##") + side + " | Gapped " + (dir == TradeDir.CALL ? "UP through" : "DOWN through") + " $" + str.tostring(entryLevel, "#.##") + " | Entry queued after cooldown", alert.freq_once_per_bar)
+            if matchChart
+                labelPos = dir == TradeDir.CALL ? high : low
+                labelStyle = dir == TradeDir.CALL ? label.style_label_down : label.style_label_up
+                label.new(bar_index, labelPos, "GAP", style=labelStyle, color=color.new(color.gray, 30), textcolor=color.white, size=size.small, tooltip="GAP PENDING " + sym + " | $" + str.tostring(k, "#.##") + side + " | " + (dir == TradeDir.CALL ? "above" : "below") + " $" + str.tostring(entryLevel, "#.##"))
+        
+        if evt == TradeEvent.EARLY
+            if isLiveBar
+                alert("[EARLY] " + sym + " | $" + str.tostring(k, "#.##") + side + " " + exp + " | Price $" + str.tostring(cur, "#.##") + " | Approaching $" + str.tostring(entryLevel, "#.##"), alert.freq_once_per_bar)
+            if matchChart
+                labelPos = dir == TradeDir.CALL ? high : low
+                labelStyle = dir == TradeDir.CALL ? label.style_label_down : label.style_label_up
+                label.new(bar_index, labelPos, "EARLY", style=labelStyle, color=color.new(color.yellow, 20), textcolor=color.black, size=size.small, tooltip="EARLY " + sym + " $" + str.tostring(k, "#.##") + side + " | Approaching $" + str.tostring(entryLevel, "#.##"))
+        
+        if evt == TradeEvent.ENTRY
+            if isLiveBar and (mode == "LOTO" or mode == "CONFIRMED" or first)
+                alertMsg = "[" + mode + "] " + sym + " | $" + str.tostring(k, "#.##") + side + " " + exp + " (" + dteStr(dte) + ") | " + verbBreak + " $" + str.tostring(entryLevel, "#.##") + " | Entry $" + str.tostring(price, "#.##") + " | Stop $" + str.tostring(stop, "#.##") + " | T1 $" + str.tostring(t1, "#.##") + " | T2 $" + str.tostring(t2, "#.##")
+                if mode == "LOTO"
+                    alert(alertMsg, alert.freq_once_per_bar)
+                else
+                    alert(alertMsg, alert.freq_once_per_bar_close)
+            if matchChart
+                lblText = mode == "LOTO" ? "LOTO" : "CONFIRMED"
+                lblColor = mode == "LOTO" ? color.new(color.orange, 0) : color.new(color.green, 0)
+                labelPos = dir == TradeDir.CALL ? low : high
+                labelStyle = dir == TradeDir.CALL ? label.style_label_up : label.style_label_down
+                label.new(bar_index, labelPos, lblText, style=labelStyle, color=lblColor, textcolor=color.white, size=size.small, tooltip="[" + mode + "] " + sym + " $" + str.tostring(k, "#.##") + side + " " + dteStr(dte) + " | Entry $" + str.tostring(price, "#.##") + " | Stop $" + str.tostring(stop, "#.##") + " | T1 $" + str.tostring(t1, "#.##") + " | T2 $" + str.tostring(t2, "#.##"))
+        
+        if evt == TradeEvent.T1
+            if isLiveBar
+                alert("[T1 HIT – TRIM " + str.tostring(partialExitPct) + "%] " + sym + " | $" + str.tostring(k, "#.##") + side + " | Lock profits, runners to T2 $" + str.tostring(t2, "#.##"), alert.freq_once_per_bar)
+            if matchChart
+                labelPos = dir == TradeDir.CALL ? high : low
+                labelStyle = dir == TradeDir.CALL ? label.style_label_down : label.style_label_up
+                label.new(bar_index, labelPos, "T1", style=labelStyle, color=color.new(color.blue, 20), textcolor=color.white, size=size.small, tooltip="T1 HIT " + sym + " | $" + str.tostring(t1, "#.##"))
+        
+        if evt == TradeEvent.T2
+            if isLiveBar
+                alert("[TARGET] " + sym + " | $" + str.tostring(k, "#.##") + side + " " + exp + " | Hit $" + str.tostring(t2, "#.##") + " | CLOSE POSITION | Mode: " + mode, alert.freq_once_per_bar)
+            if matchChart
+                labelPos = dir == TradeDir.CALL ? high : low
+                labelStyle = dir == TradeDir.CALL ? label.style_label_down : label.style_label_up
+                label.new(bar_index, labelPos, "TARGET", style=labelStyle, color=color.new(color.green, 0), textcolor=color.white, size=size.small, tooltip="TARGET " + sym + " | $" + str.tostring(t2, "#.##") + " | CLOSE")
+        
+        if evt == TradeEvent.STOP
+            if isLiveBar
+                alert("[STOP] " + sym + " | $" + str.tostring(k, "#.##") + side + " " + exp + " | Stopped $" + str.tostring(stop, "#.##") + " | Mode: " + mode, alert.freq_once_per_bar)
+            if matchChart
+                labelPos = dir == TradeDir.CALL ? low : high
+                labelStyle = dir == TradeDir.CALL ? label.style_label_up : label.style_label_down
+                label.new(bar_index, labelPos, "STOP", style=labelStyle, color=color.new(color.red, 0), textcolor=color.white, size=size.small, tooltip="STOP " + sym + " | $" + str.tostring(stop, "#.##"))
+        
+        if evt == TradeEvent.FORCE_EXIT
+            if isLiveBar
+                alert("[FORCE EXIT] " + sym + " | $" + str.tostring(k, "#.##") + side + " " + exp + " | EXIT NOW - Market closing", alert.freq_once_per_bar)
+            if matchChart
+                labelPos = dir == TradeDir.CALL ? high : low
+                labelStyle = dir == TradeDir.CALL ? label.style_label_down : label.style_label_up
+                label.new(bar_index, labelPos, "EXIT", style=labelStyle, color=color.new(color.purple, 0), textcolor=color.white, size=size.small, tooltip="FORCE EXIT " + sym)
+
+// INITIALIZATION & SETUP - Parse expiry dates
+t1_expTs = parseExp(t1_exp)
+t2_expTs = parseExp(t2_exp)
+t3_expTs = parseExp(t3_exp)
+t4_expTs = parseExp(t4_exp)
+t5_expTs = parseExp(t5_exp)
 
 var stateArr = array.new<TradeState>(5, TradeState.IDLE)
 var string[] entryModeArr = array.new_string(5, "")
@@ -323,14 +460,14 @@ var float[] entryPriceArr = array.new_float(5, na)
 var float[] stopPriceArr = array.new_float(5, na)
 var float[] t1FinalArr = array.new_float(5, na)
 var float[] t2FinalArr = array.new_float(5, na)
-var float[] t3FinalArr = array.new_float(5, na)
 var bool[] t1HitArr = array.new_bool(5, false)
 var bool[] t2HitArr = array.new_bool(5, false)
-var bool[] t3HitArr = array.new_bool(5, false)
 var bool[] earlyFiredArr = array.new_bool(5, false)
 var bool[] gapPendingArr = array.new_bool(5, false)
 var bool[] hadTradeArr = array.new_bool(5, false)
+var bool[] partialTakenArr = array.new_bool(5, false)
 
+// Reset all ticker states at start of each trading day
 if ta.change(time("D", "America/New_York")) != 0
     for i = 0 to 4
         array.set(stateArr, i, TradeState.IDLE)
@@ -340,78 +477,25 @@ if ta.change(time("D", "America/New_York")) != 0
         array.set(stopPriceArr, i, na)
         array.set(t1FinalArr, i, na)
         array.set(t2FinalArr, i, na)
-        array.set(t3FinalArr, i, na)
         array.set(t1HitArr, i, false)
         array.set(t2HitArr, i, false)
-        array.set(t3HitArr, i, false)
         array.set(earlyFiredArr, i, false)
         array.set(gapPendingArr, i, false)
         array.set(hadTradeArr, i, false)
+        array.set(partialTakenArr, i, false)
 
-[evt1_early, evt1_entry, evt1_t1, evt1_t2, evt1_t3, evt1_stop, evt1_gapPend, evt1_forceExit, mode1, price1, stop1, t1_1, t2_1, t3_1, dte1, cur1, first1] = processTicker(0, t1_on, t1_sym, t1_expTs, t1_res, t1_tgt, stateArr, entryModeArr, entryBarArr, entryPriceArr, stopPriceArr, t1FinalArr, t2FinalArr, t3FinalArr, t1HitArr, t2HitArr, t3HitArr, earlyFiredArr, gapPendingArr, hadTradeArr)
-[evt2_early, evt2_entry, evt2_t1, evt2_t2, evt2_t3, evt2_stop, evt2_gapPend, evt2_forceExit, mode2, price2, stop2, t1_2, t2_2, t3_2, dte2, cur2, first2] = processTicker(1, t2_on, t2_sym, t2_expTs, t2_res, t2_tgt, stateArr, entryModeArr, entryBarArr, entryPriceArr, stopPriceArr, t1FinalArr, t2FinalArr, t3FinalArr, t1HitArr, t2HitArr, t3HitArr, earlyFiredArr, gapPendingArr, hadTradeArr)
-[evt3_early, evt3_entry, evt3_t1, evt3_t2, evt3_t3, evt3_stop, evt3_gapPend, evt3_forceExit, mode3, price3, stop3, t1_3, t2_3, t3_3, dte3, cur3, first3] = processTicker(2, t3_on, t3_sym, t3_expTs, t3_res, t3_tgt, stateArr, entryModeArr, entryBarArr, entryPriceArr, stopPriceArr, t1FinalArr, t2FinalArr, t3FinalArr, t1HitArr, t2HitArr, t3HitArr, earlyFiredArr, gapPendingArr, hadTradeArr)
-[evt4_early, evt4_entry, evt4_t1, evt4_t2, evt4_t3, evt4_stop, evt4_gapPend, evt4_forceExit, mode4, price4, stop4, t1_4, t2_4, t3_4, dte4, cur4, first4] = processTicker(3, t4_on, t4_sym, t4_expTs, t4_res, t4_tgt, stateArr, entryModeArr, entryBarArr, entryPriceArr, stopPriceArr, t1FinalArr, t2FinalArr, t3FinalArr, t1HitArr, t2HitArr, t3HitArr, earlyFiredArr, gapPendingArr, hadTradeArr)
-[evt5_early, evt5_entry, evt5_t1, evt5_t2, evt5_t3, evt5_stop, evt5_gapPend, evt5_forceExit, mode5, price5, stop5, t1_5, t2_5, t3_5, dte5, cur5, first5] = processTicker(4, t5_on, t5_sym, t5_expTs, t5_res, t5_tgt, stateArr, entryModeArr, entryBarArr, entryPriceArr, stopPriceArr, t1FinalArr, t2FinalArr, t3FinalArr, t1HitArr, t2HitArr, t3HitArr, earlyFiredArr, gapPendingArr, hadTradeArr)
+dir1 = t1_dir == "PUT" ? TradeDir.PUT : TradeDir.CALL
+dir2 = t2_dir == "PUT" ? TradeDir.PUT : TradeDir.CALL
+dir3 = t3_dir == "PUT" ? TradeDir.PUT : TradeDir.CALL
+dir4 = t4_dir == "PUT" ? TradeDir.PUT : TradeDir.CALL
+dir5 = t5_dir == "PUT" ? TradeDir.PUT : TradeDir.CALL
 
-processAlerts(tickerNum, sym, k, exp, evt_gapPend, evt_early, evt_entry, evt_t1, evt_t2, evt_t3, evt_stop, evt_forceExit, mode, entryLevel, price, stop, t1, t2, t3, dte, cur, first) =>
-    if evt_gapPend and isLiveBar and showWarningAlerts
-        alert("[GAP PENDING] " + sym + " | $" + str.tostring(k, "#") + "C | Gapped above $" + str.tostring(entryLevel, "#.##") + " | Entry queued after cooldown", alert.freq_once_per_bar)
-    
-    if evt_early and isLiveBar
-        alert("[EARLY] " + sym + " | $" + str.tostring(k, "#") + "C " + exp + " | Price $" + str.tostring(cur, "#.##") + " | Approaching $" + str.tostring(entryLevel, "#.##"), alert.freq_once_per_bar)
-    
-    if evt_entry and isLiveBar and (mode == "CONFIRMED" or first)
-        alertMsg = "[" + mode + "] " + sym + " | $" + str.tostring(k, "#") + "C " + exp + " (" + dteStr(dte) + ") | Entry $" + str.tostring(price, "#.##") + " | Stop $" + str.tostring(stop, "#.##") + " | T1 $" + str.tostring(t1, "#.##") + " | T2 $" + str.tostring(t2, "#.##") + " | T3 $" + str.tostring(t3, "#.##")
-        if mode == "LOTO"
-            alert(alertMsg, alert.freq_once_per_bar)
-        else
-            alert(alertMsg, alert.freq_once_per_bar_close)
-    
-    if evt_t1 and isLiveBar
-        alert("[T1 HIT] " + sym + " | $" + str.tostring(k, "#") + "C " + exp + " | Hit $" + str.tostring(t1, "#.##") + " | Next T2 $" + str.tostring(t2, "#.##"), alert.freq_once_per_bar)
-    
-    if evt_t2 and isLiveBar
-        alert("[T2 HIT] " + sym + " | $" + str.tostring(k, "#") + "C " + exp + " | Hit $" + str.tostring(t2, "#.##") + " | Final T3 $" + str.tostring(t3, "#.##"), alert.freq_once_per_bar)
-    
-    if evt_t3 and isLiveBar
-        alert("[TARGET] " + sym + " | $" + str.tostring(k, "#") + "C " + exp + " | Hit $" + str.tostring(t3, "#.##") + " | CLOSE POSITION | Mode: " + mode, alert.freq_once_per_bar)
-    
-    if evt_stop and isLiveBar
-        alert("[STOP] " + sym + " | $" + str.tostring(k, "#") + "C " + exp + " | Stopped $" + str.tostring(stop, "#.##") + " | Mode: " + mode, alert.freq_once_per_bar)
-    
-    if evt_forceExit and isLiveBar
-        alert("[FORCE EXIT] " + sym + " | $" + str.tostring(k, "#") + "C " + exp + " | EXIT NOW - Market closing", alert.freq_once_per_bar)
-
-processAlerts(1, t1_sym, t1_k, t1_exp, evt1_gapPend, evt1_early, evt1_entry, evt1_t1, evt1_t2, evt1_t3, evt1_stop, evt1_forceExit, mode1, t1_res, price1, stop1, t1_1, t2_1, t3_1, dte1, cur1, first1)
-processAlerts(2, t2_sym, t2_k, t2_exp, evt2_gapPend, evt2_early, evt2_entry, evt2_t1, evt2_t2, evt2_t3, evt2_stop, evt2_forceExit, mode2, t2_res, price2, stop2, t1_2, t2_2, t3_2, dte2, cur2, first2)
-processAlerts(3, t3_sym, t3_k, t3_exp, evt3_gapPend, evt3_early, evt3_entry, evt3_t1, evt3_t2, evt3_t3, evt3_stop, evt3_forceExit, mode3, t3_res, price3, stop3, t1_3, t2_3, t3_3, dte3, cur3, first3)
-processAlerts(4, t4_sym, t4_k, t4_exp, evt4_gapPend, evt4_early, evt4_entry, evt4_t1, evt4_t2, evt4_t3, evt4_stop, evt4_forceExit, mode4, t4_res, price4, stop4, t1_4, t2_4, t3_4, dte4, cur4, first4)
-processAlerts(5, t5_sym, t5_k, t5_exp, evt5_gapPend, evt5_early, evt5_entry, evt5_t1, evt5_t2, evt5_t3, evt5_stop, evt5_forceExit, mode5, t5_res, price5, stop5, t1_5, t2_5, t3_5, dte5, cur5, first5)
-
-processLabels(tickerNum, sym, k, exp, evt_early, evt_entry, evt_t1, evt_t2, evt_t3, evt_stop, evt_forceExit, mode, entryLevel, price, stop, t1, t2, t3, dte, first, match) =>
-    if evt_early and match
-        label.new(bar_index, high, "EARLY", style=label.style_label_down, color=color.new(color.yellow, 20), textcolor=color.black, size=size.small, tooltip="EARLY " + sym + " $" + str.tostring(k, "#") + "C | Approaching $" + str.tostring(entryLevel, "#.##"))
-    
-    if evt_entry and (mode == "CONFIRMED" or first) and match
-        lblText = mode == "LOTO" ? "LOTO" : "CALL"
-        lblColor = mode == "LOTO" ? color.new(color.orange, 0) : color.new(color.green, 0)
-        label.new(bar_index, low, lblText, style=label.style_label_up, color=lblColor, textcolor=color.white, size=size.small, tooltip="[" + mode + "] " + sym + " $" + str.tostring(k, "#") + "C " + dteStr(dte) + " | Entry $" + str.tostring(price, "#.##") + " | Stop $" + str.tostring(stop, "#.##") + " | T1 $" + str.tostring(t1, "#.##") + " | T2 $" + str.tostring(t2, "#.##") + " | T3 $" + str.tostring(t3, "#.##"))
-    
-    if evt_t1 and match
-        label.new(bar_index, high, "T1", style=label.style_label_down, color=color.new(color.blue, 20), textcolor=color.white, size=size.small, tooltip="T1 HIT " + sym + " | $" + str.tostring(t1, "#.##"))
-    
-    if evt_t2 and match
-        label.new(bar_index, high, "T2", style=label.style_label_down, color=color.new(color.blue, 0), textcolor=color.white, size=size.small, tooltip="T2 HIT " + sym + " | $" + str.tostring(t2, "#.##"))
-    
-    if evt_t3 and match
-        label.new(bar_index, high, "TARGET", style=label.style_label_down, color=color.new(color.green, 0), textcolor=color.white, size=size.small, tooltip="TARGET " + sym + " | $" + str.tostring(t3, "#.##") + " | CLOSE")
-    
-    if evt_stop and match
-        label.new(bar_index, low, "STOP", style=label.style_label_up, color=color.new(color.red, 0), textcolor=color.white, size=size.small, tooltip="STOP " + sym + " | $" + str.tostring(stop, "#.##"))
-    
-    if evt_forceExit and match
-        label.new(bar_index, high, "EXIT", style=label.style_label_down, color=color.new(color.purple, 0), textcolor=color.white, size=size.small, tooltip="FORCE EXIT " + sym)
+// MAIN EXECUTION - Process each ticker and generate events
+[evt1, mode1, price1, stop1, t1_1, t2_1, dte1, cur1, first1] = processTicker(0, t1_on, t1_sym, t1_expTs, t1_res, t1_tgt, dir1, stateArr, entryModeArr, entryBarArr, entryPriceArr, stopPriceArr, t1FinalArr, t2FinalArr, t1HitArr, t2HitArr, earlyFiredArr, gapPendingArr, hadTradeArr, partialTakenArr)
+[evt2, mode2, price2, stop2, t1_2, t2_2, dte2, cur2, first2] = processTicker(1, t2_on, t2_sym, t2_expTs, t2_res, t2_tgt, dir2, stateArr, entryModeArr, entryBarArr, entryPriceArr, stopPriceArr, t1FinalArr, t2FinalArr, t1HitArr, t2HitArr, earlyFiredArr, gapPendingArr, hadTradeArr, partialTakenArr)
+[evt3, mode3, price3, stop3, t1_3, t2_3, dte3, cur3, first3] = processTicker(2, t3_on, t3_sym, t3_expTs, t3_res, t3_tgt, dir3, stateArr, entryModeArr, entryBarArr, entryPriceArr, stopPriceArr, t1FinalArr, t2FinalArr, t1HitArr, t2HitArr, earlyFiredArr, gapPendingArr, hadTradeArr, partialTakenArr)
+[evt4, mode4, price4, stop4, t1_4, t2_4, dte4, cur4, first4] = processTicker(3, t4_on, t4_sym, t4_expTs, t4_res, t4_tgt, dir4, stateArr, entryModeArr, entryBarArr, entryPriceArr, stopPriceArr, t1FinalArr, t2FinalArr, t1HitArr, t2HitArr, earlyFiredArr, gapPendingArr, hadTradeArr, partialTakenArr)
+[evt5, mode5, price5, stop5, t1_5, t2_5, dte5, cur5, first5] = processTicker(4, t5_on, t5_sym, t5_expTs, t5_res, t5_tgt, dir5, stateArr, entryModeArr, entryBarArr, entryPriceArr, stopPriceArr, t1FinalArr, t2FinalArr, t1HitArr, t2HitArr, earlyFiredArr, gapPendingArr, hadTradeArr, partialTakenArr)
 
 t1_match = showLabels and str.upper(t1_sym) == chartTicker
 t2_match = showLabels and str.upper(t2_sym) == chartTicker
@@ -419,31 +503,47 @@ t3_match = showLabels and str.upper(t3_sym) == chartTicker
 t4_match = showLabels and str.upper(t4_sym) == chartTicker
 t5_match = showLabels and str.upper(t5_sym) == chartTicker
 
-processLabels(1, t1_sym, t1_k, t1_exp, evt1_early, evt1_entry, evt1_t1, evt1_t2, evt1_t3, evt1_stop, evt1_forceExit, mode1, t1_res, price1, stop1, t1_1, t2_1, t3_1, dte1, first1, t1_match)
-processLabels(2, t2_sym, t2_k, t2_exp, evt2_early, evt2_entry, evt2_t1, evt2_t2, evt2_t3, evt2_stop, evt2_forceExit, mode2, t2_res, price2, stop2, t1_2, t2_2, t3_2, dte2, first2, t2_match)
-processLabels(3, t3_sym, t3_k, t3_exp, evt3_early, evt3_entry, evt3_t1, evt3_t2, evt3_t3, evt3_stop, evt3_forceExit, mode3, t3_res, price3, stop3, t1_3, t2_3, t3_3, dte3, first3, t3_match)
-processLabels(4, t4_sym, t4_k, t4_exp, evt4_early, evt4_entry, evt4_t1, evt4_t2, evt4_t3, evt4_stop, evt4_forceExit, mode4, t4_res, price4, stop4, t1_4, t2_4, t3_4, dte4, first4, t4_match)
-processLabels(5, t5_sym, t5_k, t5_exp, evt5_early, evt5_entry, evt5_t1, evt5_t2, evt5_t3, evt5_stop, evt5_forceExit, mode5, t5_res, price5, stop5, t1_5, t2_5, t3_5, dte5, first5, t5_match)
+handleEvent(evt1, dir1, t1_sym, t1_k, t1_exp, mode1, t1_res, price1, stop1, t1_1, t2_1, dte1, cur1, first1, t1_match)
+handleEvent(evt2, dir2, t2_sym, t2_k, t2_exp, mode2, t2_res, price2, stop2, t1_2, t2_2, dte2, cur2, first2, t2_match)
+handleEvent(evt3, dir3, t3_sym, t3_k, t3_exp, mode3, t3_res, price3, stop3, t1_3, t2_3, dte3, cur3, first3, t3_match)
+handleEvent(evt4, dir4, t4_sym, t4_k, t4_exp, mode4, t4_res, price4, stop4, t1_4, t2_4, dte4, cur4, first4, t4_match)
+handleEvent(evt5, dir5, t5_sym, t5_k, t5_exp, mode5, t5_res, price5, stop5, t1_5, t2_5, dte5, cur5, first5, t5_match)
 
+// VISUALIZATION - Plot entry and target lines (only for matching ticker chart)
 showT1Lines = showLevelLines and t1_on and t1_res > 0 and str.upper(t1_sym) == chartTicker
 showT2Lines = showLevelLines and t2_on and t2_res > 0 and str.upper(t2_sym) == chartTicker
 showT3Lines = showLevelLines and t3_on and t3_res > 0 and str.upper(t3_sym) == chartTicker
 showT4Lines = showLevelLines and t4_on and t4_res > 0 and str.upper(t4_sym) == chartTicker
 showT5Lines = showLevelLines and t5_on and t5_res > 0 and str.upper(t5_sym) == chartTicker
 
-plot(showT1Lines ? t1_res : na, "T1 Entry", color=color.new(color.green, 40), linewidth=2, style=plot.style_linebr)
-plot(showT1Lines ? t1_tgt : na, "T1 Target", color=color.new(color.green, 0), linewidth=2, style=plot.style_linebr)
-plot(showT2Lines ? t2_res : na, "T2 Entry", color=color.new(color.green, 40), linewidth=2, style=plot.style_linebr)
-plot(showT2Lines ? t2_tgt : na, "T2 Target", color=color.new(color.green, 0), linewidth=2, style=plot.style_linebr)
-plot(showT3Lines ? t3_res : na, "T3 Entry", color=color.new(color.green, 40), linewidth=2, style=plot.style_linebr)
-plot(showT3Lines ? t3_tgt : na, "T3 Target", color=color.new(color.green, 0), linewidth=2, style=plot.style_linebr)
-plot(showT4Lines ? t4_res : na, "T4 Entry", color=color.new(color.green, 40), linewidth=2, style=plot.style_linebr)
-plot(showT4Lines ? t4_tgt : na, "T4 Target", color=color.new(color.green, 0), linewidth=2, style=plot.style_linebr)
-plot(showT5Lines ? t5_res : na, "T5 Entry", color=color.new(color.green, 40), linewidth=2, style=plot.style_linebr)
-plot(showT5Lines ? t5_tgt : na, "T5 Target", color=color.new(color.green, 0), linewidth=2, style=plot.style_linebr)
+// Direction-aware colors: Green for CALLs, Red for PUTs
+t1_entryColor = dir1 == TradeDir.CALL ? color.new(color.green, 40) : color.new(color.red, 40)
+t1_targetColor = dir1 == TradeDir.CALL ? color.new(color.green, 0) : color.new(color.red, 0)
+t2_entryColor = dir2 == TradeDir.CALL ? color.new(color.green, 40) : color.new(color.red, 40)
+t2_targetColor = dir2 == TradeDir.CALL ? color.new(color.green, 0) : color.new(color.red, 0)
+t3_entryColor = dir3 == TradeDir.CALL ? color.new(color.green, 40) : color.new(color.red, 40)
+t3_targetColor = dir3 == TradeDir.CALL ? color.new(color.green, 0) : color.new(color.red, 0)
+t4_entryColor = dir4 == TradeDir.CALL ? color.new(color.green, 40) : color.new(color.red, 40)
+t4_targetColor = dir4 == TradeDir.CALL ? color.new(color.green, 0) : color.new(color.red, 0)
+t5_entryColor = dir5 == TradeDir.CALL ? color.new(color.green, 40) : color.new(color.red, 40)
+t5_targetColor = dir5 == TradeDir.CALL ? color.new(color.green, 0) : color.new(color.red, 0)
+
+plot(showT1Lines ? t1_res : na, "T1 Entry", color=t1_entryColor, linewidth=2, style=plot.style_linebr)
+plot(showT1Lines ? t1_tgt : na, "T1 Target", color=t1_targetColor, linewidth=2, style=plot.style_linebr)
+plot(showT2Lines ? t2_res : na, "T2 Entry", color=t2_entryColor, linewidth=2, style=plot.style_linebr)
+plot(showT2Lines ? t2_tgt : na, "T2 Target", color=t2_targetColor, linewidth=2, style=plot.style_linebr)
+plot(showT3Lines ? t3_res : na, "T3 Entry", color=t3_entryColor, linewidth=2, style=plot.style_linebr)
+plot(showT3Lines ? t3_tgt : na, "T3 Target", color=t3_targetColor, linewidth=2, style=plot.style_linebr)
+plot(showT4Lines ? t4_res : na, "T4 Entry", color=t4_entryColor, linewidth=2, style=plot.style_linebr)
+plot(showT4Lines ? t4_tgt : na, "T4 Target", color=t4_targetColor, linewidth=2, style=plot.style_linebr)
+plot(showT5Lines ? t5_res : na, "T5 Entry", color=t5_entryColor, linewidth=2, style=plot.style_linebr)
+plot(showT5Lines ? t5_tgt : na, "T5 Target", color=t5_targetColor, linewidth=2, style=plot.style_linebr)
+
+// Display config lock timestamp on chart
+anyTickerMatches = (t1_on and str.upper(t1_sym) == chartTicker) or (t2_on and str.upper(t2_sym) == chartTicker) or (t3_on and str.upper(t3_sym) == chartTicker) or (t4_on and str.upper(t4_sym) == chartTicker) or (t5_on and str.upper(t5_sym) == chartTicker)
 
 var label configLockLabel = na
-string configLockLabelText = "LOCKED AT : " + (month(configLockTime)  < 10 ? "0" : "") + str.tostring(month(configLockTime)) + "-" + (dayofmonth(configLockTime) < 10 ? "0" : "") + str.tostring(dayofmonth(configLockTime)) + " " + (hour(configLockTime)   < 10 ? "0" : "") + str.tostring(hour(configLockTime)) + ":" + (minute(configLockTime) < 10 ? "0" : "") + str.tostring(minute(configLockTime)) + ":" +(second(configLockTime) < 10 ? "0" : "") + str.tostring(second(configLockTime))
-if ((t1_on and str.upper(t1_sym) == chartTicker) or (t2_on and str.upper(t2_sym) == chartTicker) or (t3_on and str.upper(t3_sym) == chartTicker) or (t4_on and str.upper(t4_sym) == chartTicker) or (t5_on and str.upper(t5_sym) == chartTicker)) and barstate.islast
+if anyTickerMatches and barstate.islast
+    configLockLabelText = "LOCKED AT : " + formatTimeComponent(month(configLockTime)) + "-" + formatTimeComponent(dayofmonth(configLockTime)) + " " + formatTimeComponent(hour(configLockTime)) + ":" + formatTimeComponent(minute(configLockTime)) + ":" + formatTimeComponent(second(configLockTime))
     label.delete(configLockLabel)
     configLockLabel := label.new(bar_index, high, configLockLabelText, style = label.style_label_upper_right, color = color.new(color.blue, 70), textcolor = color.white, size = size.small)
