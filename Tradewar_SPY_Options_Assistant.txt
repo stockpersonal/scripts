@@ -5,21 +5,21 @@ indicator("Tradewar SPY Options Assistant", overlay=true, max_labels_count=500)
 // ═══════════════════════════════════════════════════════════════════════════════
 groupCall = "═══ SPY CALLS ═══"
 enableCall      = input.bool(true, "Enable CALL Alerts", group=groupCall)
-callStrike      = input.float(693, "STRIKE ($)", group=groupCall, step=1)
-callExp         = input.string("JAN-12-26", "EXP (e.g., DEC-24-25)", group=groupCall)
-callTargetPrice = input.float(694, "TARGET Price ($)", group=groupCall, step=0.01)
-callEntry       = input.float(692.25, "ENTRY: Breaks ($)", group=groupCall, step=0.01)
+callStrike      = input.float(691, "STRIKE ($)", group=groupCall, step=1)
+callExp         = input.string("JAN-13-26", "EXP (e.g., DEC-24-25)", group=groupCall)
+callTargetPrice = input.float(692.5, "TARGET Price ($)", group=groupCall, step=0.01)
+callEntry       = input.float(691, "ENTRY: Breaks ($)", group=groupCall, step=0.01)
 
 groupPut = "═══ SPY PUTS ═══"
 enablePut      = input.bool(true, "Enable PUT Alerts", group=groupPut)
 putStrike      = input.float(690, "STRIKE ($)", group=groupPut, step=1)
-putExp         = input.string("JAN-12-26", "EXP (e.g., DEC-24-25)", group=groupPut)
+putExp         = input.string("JAN-13-26", "EXP (e.g., DEC-24-25)", group=groupPut)
 putTargetPrice = input.float(688, "TARGET Price ($)", group=groupPut, step=0.01)
-putEntry       = input.float(690, "ENTRY: Loses ($)", group=groupPut, step=0.01)
+putEntry       = input.float(689.77, "ENTRY: Loses ($)", group=groupPut, step=0.01)
 
 groupSettings = "═══ SETTINGS ═══"
 cooldownMin      = input.int(2, "Cooldown After Open (min)", group=groupSettings, minval=1, maxval=10)
-lotoWindowEnd    = input.int(55, "LOTO Window End (min)", group=groupSettings, minval=3, maxval=60)
+lotoWindowEnd    = input.int(30, "LOTO Window End (min)", group=groupSettings, minval=3, maxval=60)
 confirmedStart   = input.int(5, "CONFIRMED Start (min)", group=groupSettings, minval=3, maxval=15)
 earlyAlertDist   = input.float(0.30, "Early Alert Distance ($)", group=groupSettings, minval=0.10, maxval=1.00, step=0.05)
 stopOffset       = input.float(0.5, "Stop Offset ($)", group=groupSettings, minval=0.05, maxval=1.00, step=0.05)
@@ -81,12 +81,12 @@ T1_PCT = 0.33
 T2_PCT = 0.66
 MAX_ENTRY_SLIPPAGE = 0.20
 MAX_SCORE = 6
+is1mChart = timeframe.period == "1"
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════════
-//Alerts trigger instantly upon touch, ensuring you don't miss any fast tags.
-isAlertBar = barstate.isrealtime or barstate.isconfirmed
+isAlertBar = barstate.isconfirmed
 
 parseMonth(m) =>
     u = str.upper(str.trim(m))
@@ -187,6 +187,8 @@ var bool callMiddayAlertFired = false
 var bool putMiddayAlertFired = false
 var bool callSlippageAlertFired = false
 var bool putSlippageAlertFired = false
+var bool callMissedAlertFired = false
+var bool putMissedAlertFired = false
 var bool haltAlertFired = false
 var int configLockTime = na
 configLockTime := na(configLockTime) ? timenow : configLockTime
@@ -200,10 +202,16 @@ configLockTime := na(configLockTime) ? timenow : configLockTime
 vixClose = useVixFilter ? vixCloseRaw : na
 vixEma = useVixFilter ? vixEmaRaw : na
 tickRaw = request.security("USI:TICK", timeframe.period, close, lookahead=barmerge.lookahead_off)
-priceNow = m1Close
-priceHigh = m1High
-priceLow = m1Low
-pricePrev = m1Close1
+float priceNow  = m1Close
+float priceHigh = m1High
+float priceLow  = m1Low
+float pricePrev = m1Close1
+
+if is1mChart
+    priceNow  := close
+    priceHigh := high
+    priceLow  := low
+    pricePrev := close[1]
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DERIVED CALCULATIONS
@@ -253,7 +261,8 @@ volumeOK = not useVolumeConfirm or (bar_index > 20 and not na(m1VolAvg) and m1Vo
 inMiddayChop = useMiddayFilter and minutesET >= MIDDAY_START and minutesET < MIDDAY_END
 // Note: Halt detection uses realtime-only gap calculation, so halts won't be detected in replay mode
 haltGapMinutes = barstate.isrealtime and not na(time[1]) ? (time - time[1]) / 60000 : 0
-isPossibleHalt = useHaltDetection and haltGapMinutes >= haltGapThreshold and isRTH and isRTH[1] and bar_index > 10
+haltAllowed = minutesSinceOpen >= 3 //Ignore Halt for 3 mins
+isPossibleHalt = useHaltDetection and haltAllowed and haltGapMinutes >= haltGapThreshold and isRTH and isRTH[1] and bar_index > 10
 barsSinceHalt = ta.barssince(isPossibleHalt)
 inHaltCooldown = useHaltDetection and not na(barsSinceHalt) and barsSinceHalt <= haltCooldownBars
 isFlatBar = useFlatBarFilter and priceHigh == priceLow
@@ -262,8 +271,8 @@ cooldownJustEnded = minutesSinceOpen == cooldownMin and minutesSinceOpen[1] < co
 
 callCommonEntryFilters = isRTH and not callExpired and not isSpike and volumeOK and not inMiddayChop and not forceExit and not isPossibleHalt and not inHaltCooldown and not isFlatBar and canEnterTime
 putCommonEntryFilters = isRTH and not putExpired and not isSpike and volumeOK and not inMiddayChop and not forceExit and not isPossibleHalt and not inHaltCooldown and not isFlatBar and canEnterTime
-callBaseEntryFilters = callCommonEntryFilters and not cooldownJustEnded
-putBaseEntryFilters = putCommonEntryFilters and not cooldownJustEnded
+callBaseEntryFilters = callCommonEntryFilters // and not cooldownJustEnded
+putBaseEntryFilters = putCommonEntryFilters // and not cooldownJustEnded
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TREND DETECTION
@@ -334,7 +343,9 @@ putReadyToEnter = (putState == TradeState.IDLE or putState == TradeState.EARLY) 
 putEntryType = putLotoReady ? "LOTO" : (putConfirmedReady or putPriceAtEntryReady) ? "CONFIRMED" : ""
 
 callSlippageBlocked = callBreakOrGap and callCommonEntryFilters and priceNow > callEntry + MAX_ENTRY_SLIPPAGE and (callState == TradeState.IDLE or callState == TradeState.EARLY) and (not useTrendFilter or confirmedUptrend) and (callLotoAllowed or callConfirmedAllowed)
+callMissedGap = isFirstBarOfDay and hasCall and priceNow > callEntry + MAX_ENTRY_SLIPPAGE and priceNow < callTargetPrice and callState == TradeState.IDLE
 putSlippageBlocked = putBreakOrGap and putCommonEntryFilters and priceNow < putEntry - MAX_ENTRY_SLIPPAGE and (putState == TradeState.IDLE or putState == TradeState.EARLY) and (not useTrendFilter or confirmedDowntrend) and (putLotoAllowed or putConfirmedAllowed)
+putMissedGap = isFirstBarOfDay and hasPut and priceNow < putEntry - MAX_ENTRY_SLIPPAGE and priceNow > putTargetPrice and putState == TradeState.IDLE
 
 if callSlippageBlocked and barstate.isconfirmed and not callSlippageAlertFired
     handleTradeEvent(true, "[SLIPPAGE] CALL $" + str.tostring(callStrike, "#") + "C blocked", "SLIPPAGE", color.new(color.red, 70), false, priceHigh, showProtectionAlerts, true)
@@ -342,6 +353,13 @@ if callSlippageBlocked and barstate.isconfirmed and not callSlippageAlertFired
 if putSlippageBlocked and barstate.isconfirmed and not putSlippageAlertFired
     handleTradeEvent(false, "[SLIPPAGE] PUT $" + str.tostring(putStrike, "#") + "P blocked", "SLIPPAGE", color.new(color.red, 70), true, priceLow, showProtectionAlerts, true)
     putSlippageAlertFired := true
+
+if callMissedGap and isAlertBar and not callMissedAlertFired
+    handleTradeEvent(true, "[MISSED] CALL $" + str.tostring(callStrike) + "C | Opened beyond entry", "MISSED", color.new(color.gray, 40), false,priceHigh, true, true)
+    callMissedAlertFired := true
+if putMissedGap and isAlertBar and not putMissedAlertFired
+    handleTradeEvent(false,  "[MISSED] PUT $" + str.tostring(putStrike) + "P | Opened beyond entry", "MISSED", color.new(color.gray, 40), true, priceLow, true, true)
+    putMissedAlertFired := true
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ENTRY SCORE (0–6)
@@ -399,10 +417,11 @@ processTrade(bool isCall, TradeState state, bool earlyFiredToday, bool earlyLock
     
     // Handle early alert
     earlyFilters = isRTH and not expired and not isSpike and volumeOK and not inMiddayChop and not isPossibleHalt and not inHaltCooldown and canEnterTime
-    if state == TradeState.IDLE and approaching and earlyFilters and not earlyFiredToday and not earlyLocked
+    if state == TradeState.IDLE and approaching and earlyFilters and not earlyLocked
         newState := TradeState.EARLY
         newEarlyFiredToday := true
         newEarlyLocked := true
+
         if not eventHandled_Early
             handleTradeEvent(isCall, "[EARLY] " + (isCall ? "CALL" : "PUT") + " $" + str.tostring(strike, "#") + (isCall ? "C" : "P") + " " + exp + " | $" + str.tostring(priceNow, "#.##") + " → $" + str.tostring(entry, "#.##"), "EARLY", color.new(color.yellow, 20), not isCall, isCall ? priceHigh : priceLow)
             newEventHandled_Early := true
@@ -440,10 +459,10 @@ processTrade(bool isCall, TradeState state, bool earlyFiredToday, bool earlyLock
             stopHit = isCall ? priceLow <= newStopPrice : priceHigh >= newStopPrice
             if stopHit
                 newState := TradeState.EXITED
-                // Note: Resetting earlyFiredToday allows EARLY alert to fire again after exit in same session
                 newEarlyFiredToday := false
                 newEarlyLocked := false
-                if not newEventHandled_Exit
+                newEventHandled_Early := false
+                if not newEventHandled_Stop
                     handleTradeEvent(isCall, "[" + (isCall ? "CALL" : "PUT") + " STOP HIT]", "STOP", color.red, isCall, isCall ? priceLow : priceHigh)
                     newEventHandled_Stop := true
                     newEventHandled_Exit := true
@@ -477,19 +496,21 @@ processTrade(bool isCall, TradeState state, bool earlyFiredToday, bool earlyLock
                 t3Hit = isCall ? priceHigh >= newT3Final : priceLow <= newT3Final
                 if t3Hit
                     newState := TradeState.EXITED
-                    // Note: Resetting earlyFiredToday allows EARLY alert to fire again after exit in same session
                     newEarlyFiredToday := false
                     newEarlyLocked := false
+                    newEventHandled_Early := false
+                    
                     if not newEventHandled_Exit
                         handleTradeEvent(isCall, "[" + (isCall ? "CALL" : "PUT") + " TARGET HIT]", "TARGET", color.green, not isCall, getLabelOffset(isCall, priceHigh, priceLow))
                         newEventHandled_Exit := true
     
     // Handle early state reset
     if newState == TradeState.EARLY
-        earlyDisengaged = isCall ? low > entry + earlyAlertDist : high < entry - earlyAlertDist
+        earlyDisengaged = isCall ? low > callEntry + earlyAlertDist : high < putEntry - earlyAlertDist
         if earlyDisengaged
-            newState := TradeState.IDLE
-            newEventHandled_Early := false
+            newState := TradeState.IDLE  // Reset state to IDLE
+            newEarlyFiredToday := false  // Allow EARLY to trigger again
+            newEarlyLocked := false      // Unlock EARLY alert
     
     // Handle exited state cleanup
     if newState == TradeState.EXITED and bar_index > newEntryBar
@@ -558,6 +579,11 @@ putEventHandled_Exit := putEventHandled_ExitNew
 // SYSTEM & PROTECTION EVENTS
 // ═══════════════════════════════════════════════════════════════════════════════
 if forceExit and not forceExit[1] and (callState == TradeState.IN_TRADE or putState == TradeState.IN_TRADE)
+    callEventHandled_Early := false
+    putEventHandled_Early := false
+    callEarlyLocked := false
+    putEarlyLocked := false
+
     if callState == TradeState.IN_TRADE
         callState := TradeState.EXITED
         callEarlyFiredToday := false
@@ -677,6 +703,9 @@ if ta.change(time("D", "America/New_York")) != 0
     putEventHandled_T2 := false
     putEventHandled_Stop := false
     putEventHandled_Exit := false
+    callMissedAlertFired := false
+    putMissedAlertFired := false
+
 
 // Replay label
 if not barstate.isrealtime and barstate.islast and showLabels and (not showLabelsOnSPYOnly or isSPY)
