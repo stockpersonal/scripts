@@ -1,719 +1,668 @@
-//@version=5
-indicator("Tradewar SPY Options Assistant", overlay=true, max_labels_count=500)
-// ═══════════════════════════════════════════════════════════════════════════════
-// INPUTS
-// ═══════════════════════════════════════════════════════════════════════════════
-groupCall = "═══ SPY CALLS ═══"
-enableCall      = input.bool(true, "Enable CALL Alerts", group=groupCall)
-callStrike      = input.float(698, "STRIKE ($)", group=groupCall, step=1)
-callExp         = input.string("JAN-14-26", "EXP (e.g., DEC-24-25)", group=groupCall)
-callTargetPrice = input.float(700, "TARGET Price ($)", group=groupCall, step=0.01)
-callEntry       = input.float(697.3, "ENTRY: Breaks ($)", group=groupCall, step=0.01)
+//@version=6
+indicator('Tradewar Options Assistant Multiple', overlay = true, dynamic_requests = true, max_labels_count = 500)
 
-groupPut = "═══ SPY PUTS ═══"
-enablePut      = input.bool(true, "Enable PUT Alerts", group=groupPut)
-putStrike      = input.float(695, "STRIKE ($)", group=groupPut, step=1)
-putExp         = input.string("JAN-14-26", "EXP (e.g., DEC-24-25)", group=groupPut)
-putTargetPrice = input.float(692.5, "TARGET Price ($)", group=groupPut, step=0.01)
-putEntry       = input.float(695, "ENTRY: Loses ($)", group=groupPut, step=0.01)
+// ============================================================================
+// INPUT PARAMETERS - Ticker configurations (5 tickers supported)
+// ============================================================================
+group1 = '═══ TICKER 1 ═══'
+t1_on  = input.bool(true, 'Enable', group = group1)
+t1_dir = input.string('CALL', 'Direction', options = ['CALL', 'PUT'], group = group1)
+t1_sym = input.string('NFLX', 'Symbol', group = group1)
+t1_k   = input.float(90, 'Strike ($)', group = group1, step = 1)
+t1_exp = input.string('JAN-23-26', 'Expiry', group = group1)
+t1_tgt = input.float(90, 'Target Price ($)', group = group1, step = 0.01, tooltip = 'Final target price (T2) - script calculates T1/T2 automatically')
+t1_res = input.float(89.25, 'Entry: Breaks ($)', group = group1, step = 0.01)
 
-groupSettings = "═══ SETTINGS ═══"
-cooldownMin      = input.int(2, "Cooldown After Open (min)", group=groupSettings, minval=1, maxval=10)
-lotoWindowEnd    = input.int(30, "LOTO Window End (min)", group=groupSettings, minval=3, maxval=60)
-confirmedStart   = input.int(5, "CONFIRMED Start (min)", group=groupSettings, minval=3, maxval=15)
-earlyAlertDist   = input.float(0.30, "Early Alert Distance ($)", group=groupSettings, minval=0.10, maxval=1.00, step=0.05)
-stopOffset       = input.float(0.5, "Stop Offset ($)", group=groupSettings, minval=0.05, maxval=1.00, step=0.05)
-useTrendFilter   = input.bool(false, "Trend Filter (EMA)", group=groupSettings, tooltip="OFF=price only, ON=requires EMA trend")
-emaFastLen       = input.int(9, "Fast EMA", group=groupSettings, minval=5, maxval=20, inline="ema")
-emaSlowLen       = input.int(21, "Slow EMA", group=groupSettings, minval=10, maxval=50, inline="ema")
-useVwapConfirm   = input.bool(false, "Require VWAP Confirmation", group=groupSettings)
-useLotoAlert     = input.bool(true, "Enable LOTO Alert", group=groupSettings)
-useLotoWindow    = input.bool(true, "LOTO Time Window (2-60 min)", group=groupSettings)
-allowLotoReentry = input.bool(false, "Allow LOTO Re-Entry", group=groupSettings)
-useBreakEvenStop = input.bool(true, "Break-Even Stop After T1", group=groupSettings)
-useTrailingStop  = input.bool(true, "Trail Stop to T1 After T2", group=groupSettings)
-useTick          = input.bool(false, "Use TICK Confirmation", group=groupSettings)
-tickStartMin     = input.int(30, "TICK Start (min after open)", group=groupSettings, minval=15, maxval=60)
-minTickBull      = input.int(200, "Min TICK for CALL", group=groupSettings, minval=-500, maxval=1000)
-maxTickBear      = input.int(-200, "Max TICK for PUT", group=groupSettings, minval=-1000, maxval=500)
-useVixFilter     = input.bool(false, "Use VIX Filter", group=groupSettings)
-vixSymbol        = input.symbol("VIX", "VIX Symbol", group=groupSettings)
-vixConfirmedMin  = input.float(15.0, "Min VIX", group=groupSettings, minval=5, maxval=80, step=0.5)
-vixConfirmedMax  = input.float(30.0, "Max VIX", group=groupSettings, minval=5, maxval=80, step=0.5)
+group2 = '═══ TICKER 2 ═══'
+t2_on  = input.bool(true, 'Enable', group = group2)
+t2_dir = input.string('CALL', 'Direction', options = ['CALL', 'PUT'], group = group2)
+t2_sym = input.string('INTC', 'Symbol', group = group2)
+t2_k   = input.float(47.5, 'Strike ($)', group = group2, step = 1)
+t2_exp = input.string('JAN-23-26', 'Expiry', group = group2)
+t2_tgt = input.float(48.5, 'Target Price ($)', group = group2, step = 0.01, tooltip = 'Final target price (T2)')
+t2_res = input.float(47.34, 'Entry: Breaks ($)', group = group2, step = 0.01)
 
-groupProtection = "═══ PROTECTION ═══"
-useSpikeFilter   = input.bool(true, "Block Spike Candles", group=groupProtection)
-spikeMultiplier  = input.float(2.0, "Spike Threshold (x Avg)", group=groupProtection, minval=1.5, maxval=4.0, step=0.5)
-useVolumeConfirm = input.bool(true, "Require Volume", group=groupProtection)
-volumeMultiplier = input.float(1.2, "Volume Threshold (x Avg)", group=groupProtection, minval=1.0, maxval=3.0, step=0.1)
-useMiddayFilter  = input.bool(true, "Block Midday (12-13:30)", group=groupProtection)
-useHaltDetection = input.bool(true, "Detect Halts", group=groupProtection)
-haltGapThreshold = input.int(3, "Halt Gap (min)", group=groupProtection, minval=2, maxval=10)
-haltCooldownBars = input.int(2, "Halt Cooldown Bars", group=groupProtection, minval=1, maxval=5)
-useFlatBarFilter = input.bool(true, "Block Flat Bars", group=groupProtection)
-entryCutoffMin   = input.int(10, "Entry Cutoff (min before close)", group=groupProtection, minval=5, maxval=30)
+group3 = '═══ TICKER 3 ═══'
+t3_on  = input.bool(true, 'Enable', group = group3)
+t3_dir = input.string('CALL', 'Direction', options = ['CALL', 'PUT'], group = group3)
+t3_sym = input.string('GDX', 'Symbol', group = group3)
+t3_k   = input.float(102, 'Strike ($)', group = group3, step = 1)
+t3_exp = input.string('JAN-23-26', 'Expiry', group = group3)
+t3_tgt = input.float(103, 'Target Price ($)', group = group3, step = 0.01, tooltip = 'Final target price (T2)')
+t3_res = input.float(101.88, 'Entry: Breaks ($)', group = group3, step = 0.01)
 
-groupAlerts = "═══ ALERTS ═══"
-showWarningAlerts    = input.bool(true, "Show Warning Alerts", group=groupAlerts)
-showProtectionAlerts = input.bool(false, "Show Protection Alerts", group=groupAlerts)
+group4 = '═══ TICKER 4 ═══'
+t4_on  = input.bool(true, 'Enable', group = group4)
+t4_dir = input.string('CALL', 'Direction', options = ['CALL', 'PUT'], group = group4)
+t4_sym = input.string('SLV', 'Symbol', group = group4)
+t4_k   = input.float(87, 'Strike ($)', group = group4, step = 1)
+t4_exp = input.string('JAN-23-26', 'Expiry', group = group4)
+t4_tgt = input.float(88.5, 'Target Price ($)', group = group4, step = 0.01, tooltip = 'Final target price (T2)')
+t4_res = input.float(87, 'Entry: Breaks ($)', group = group4, step = 0.01)
 
-groupVisual = "═══ VISUAL ═══"
-showLabels          = input.bool(true, "Show Labels", group=groupVisual)
-showLabelsOnSPYOnly = input.bool(true, "Labels on SPY Only", group=groupVisual)
-showLevelLines      = input.bool(true, "Show Level Lines", group=groupVisual)
+group5 = '═══ TICKER 5 ═══'
+t5_on  = input.bool(false, 'Enable', group = group5)
+t5_dir = input.string('CALL', 'Direction', options = ['CALL', 'PUT'], group = group5)
+t5_sym = input.string('SLV', 'Symbol', group = group5)
+t5_k   = input.float(78, 'Strike ($)', group = group5, step = 1)
+t5_exp = input.string('JAN-16-26', 'Expiry', group = group5)
+t5_tgt = input.float(79, 'Target Price ($)', group = group5, step = 0.01, tooltip = 'Final target price (T2)')
+t5_res = input.float(77.55, 'Entry: Breaks ($)', group = group5, step = 0.01)
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// TYPES & CONSTANTS
-// ═══════════════════════════════════════════════════════════════════════════════
+// ============================================================================
+// Timing settings
+// ============================================================================
+groupSettings = '═══ SETTINGS ═══'
+cooldownMin = input.int(2, 'Cooldown After Open (min)', group = groupSettings, minval = 1, maxval = 10)
+lotoWindowEnd = input.int(10, 'LOTO Window End (min)', group = groupSettings, minval = 3, maxval = 15)
+confirmedStart = input.int(5, 'CONFIRMED Start (min)', group = groupSettings, minval = 3, maxval = 15)
+earlyAlertDist = input.float(0.50, 'Early Alert Distance (%)', group = groupSettings, minval = 0.10, maxval = 2.00, step = 0.10, tooltip = '% below resistance to trigger early alert')
+stopOffsetPct = input.float(0.30, 'Stop Offset (%)', group = groupSettings, minval = 0.10, maxval = 1.00, step = 0.05, tooltip = '% below entry for stop loss')
+partialExitPct = input.float(50, 'Partial Exit % at T1', group = groupSettings, minval = 10, maxval = 90, step = 5, tooltip = '% of position to trim at T1, runners continue to T2')
+trailPct = input.float(0.25, 'Trailing Stop % (after T1)', group = groupSettings, minval = 0.1, maxval = 1.0, step = 0.05, tooltip = '% trailing stop distance after T1 hit')
+
+// ============================================================================
+// Filter settings
+// ============================================================================
+groupFilters = '═══ FILTERS ═══'
+useTrendFilter = input.bool(true, 'Trend Filter (EMA 9 > 21)', group = groupFilters, tooltip = 'Recommended: ON - Prevents counter-trend entries')
+emaFastLen = input.int(9, 'Fast EMA', group = groupFilters, minval = 5, maxval = 20, inline = 'ema')
+emaSlowLen = input.int(21, 'Slow EMA', group = groupFilters, minval = 10, maxval = 50, inline = 'ema')
+useVwapConfirm = input.bool(false, 'Require VWAP Confirmation', group = groupFilters, tooltip = 'OFF for catalyst plays - news stocks often gap above VWAP')
+useLotoAlert = input.bool(true, 'Enable LOTO Alert (Fast 1-min)', group = groupFilters)
+
+// ============================================================================
+// Protection settings
+// ============================================================================
+groupProtection = '═══ PROTECTION ═══'
+useSpikeFilter = input.bool(true, 'Block Entry on Spike Candles', group = groupProtection, tooltip = 'Recommended: ON - Avoids chasing extended candles')
+spikeMultiplier = input.float(2.5, 'Spike Threshold (x Avg Range)', group = groupProtection, minval = 1.5, maxval = 4.0, step = 0.5, tooltip = 'Higher = more lenient for news spikes')
+useVolumeConfirm = input.bool(false, 'Require Volume Confirmation', group = groupProtection, tooltip = 'OFF for catalyst plays - news already drives volume')
+volumeMultiplier = input.float(1.0, 'Volume Threshold (x Avg)', group = groupProtection, minval = 0.5, maxval = 3.0, step = 0.1)
+useMiddayFilter = input.bool(false, 'Block Midday Chop (12:00-13:30 ET)', group = groupProtection, tooltip = 'OFF for catalyst plays - news can break out anytime')
+
+// ============================================================================
+// Alert & visual settings
+// ============================================================================
+groupAlerts = '═══ ALERT PREFERENCES ═══'
+showWarningAlerts = input.bool(true, 'Show Warning Alerts', group = groupAlerts, tooltip = 'GAP PENDING alerts')
+
+groupVisual = '═══ VISUAL SETTINGS ═══'
+showLabels = input.bool(true, 'Show Chart Labels', group = groupVisual, tooltip = 'Display visual labels on chart for entries, targets, and stops')
+showLevelLines = input.bool(true, 'Show Entry/Target Lines', group = groupVisual, tooltip = 'Display horizontal lines for entry and target levels (only on matching ticker chart)')
+
+// ============================================================================
+// TYPE DEFINITIONS
+// ============================================================================
+enum TradeDir
+	CALL
+	PUT
+
+enum TradeEvent
+	NONE
+	EARLY
+	ENTRY
+	T1
+	T2
+	STOP
+	GAP_PENDING
+	FORCE_EXIT
+
 enum TradeState
-    IDLE
-    EARLY
-    IN_TRADE
-    EXITED
+	IDLE
+	EARLY
+	IN_TRADE
+	EXITED
 
-MARKET_OPEN = 9 * 60 + 30
-MARKET_CLOSE = 16 * 60
-EXIT_WARNING_MIN = 15
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+MARKET_OPEN_HOUR = 9
+MARKET_OPEN_MIN = 30
+MARKET_CLOSE_HOUR = 16
+MARKET_CLOSE_MIN = 0
+MARKET_OPEN = MARKET_OPEN_HOUR * 60 + MARKET_OPEN_MIN
+MARKET_CLOSE = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MIN
+DROP_THRESHOLD = 0.10
 FORCE_EXIT_MIN = 5
 MIDDAY_START = 12 * 60
 MIDDAY_END = 13 * 60 + 30
-T1_PCT = 0.33
-T2_PCT = 0.66
-MAX_ENTRY_SLIPPAGE = 0.20
-MAX_SCORE = 6
-is1mChart = timeframe.period == "1"
+T1_PCT = 0.40
+MAX_ENTRY_SLIPPAGE = 0.15
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// FUNCTIONS
-// ═══════════════════════════════════════════════════════════════════════════════
-isAlertBar = barstate.isconfirmed
-
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+// Parse month abbreviation to number (JAN -> 1, FEB -> 2, etc.)
 parseMonth(m) =>
     u = str.upper(str.trim(m))
-    u == "JAN" ? 1 : u == "FEB" ? 2 : u == "MAR" ? 3 : u == "APR" ? 4 : u == "MAY" ? 5 : u == "JUN" ? 6 : u == "JUL" ? 7 : u == "AUG" ? 8 : u == "SEP" ? 9 : u == "OCT" ? 10 : u == "NOV" ? 11 : u == "DEC" ? 12 : 0
+    u == 'JAN' ? 1 : u == 'FEB' ? 2 : u == 'MAR' ? 3 : u == 'APR' ? 4 : u == 'MAY' ? 5 : u == 'JUN' ? 6 : u == 'JUL' ? 7 : u == 'AUG' ? 8 : u == 'SEP' ? 9 : u == 'OCT' ? 10 : u == 'NOV' ? 11 : u == 'DEC' ? 12 : 0
 
+// Parse expiry string (format: "JAN-09-26") to timestamp, handles 2-digit years
 parseExp(s) =>
     result = float(na)
     if str.length(s) >= 9
-        p = str.split(s, "-")
+        p = str.split(s, '-')
         if array.size(p) >= 3
             monthNum = parseMonth(array.get(p, 0))
             dayNum = str.tonumber(array.get(p, 1))
             yearNum = str.tonumber(array.get(p, 2))
             if not na(yearNum) and yearNum < 100
                 yearNum := yearNum + 2000
+                yearNum
             if monthNum > 0 and not na(dayNum) and not na(yearNum)
                 result := timestamp(int(yearNum), monthNum, int(dayNum), 16, 0, 0)
+                result
     result
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// UNIFIED EVENT HANDLER - "Event = Action" Pattern
-// Handles alert + label + marking in one place
-// ═══════════════════════════════════════════════════════════════════════════════
-// Helper: Calculate label Y-offset for targets (above/below price)
-getLabelOffset(bool isCall, float hi, float lo) =>
-    rangeLocal = hi - lo
-    isCall ? hi + rangeLocal * 0.25 : lo - rangeLocal * 0.25
+// Format days to expiration as string
+dteStr(d) =>
+    d == 0 ? '0DTE' : d == 1 ? '1DTE' : str.tostring(d) + 'DTE'
 
-handleTradeEvent(bool isCall, string alertMsg, string labelText, color labelColor, bool labelUp, float labelY, bool showAlert = true, bool showLabel = true) =>
-    isSPY = str.upper(syminfo.ticker) == "SPY"
-    canShowLabels = showLabels and (not showLabelsOnSPYOnly or isSPY)
-    labelStyle = labelUp ? label.style_label_up : label.style_label_down
-    
-    // Fire alert immediately
-    if isAlertBar and showAlert
-        alert(alertMsg, alert.freq_once_per_bar)
-    
-    // Draw label immediately
-    if canShowLabels and showLabel
-        label.new(bar_index, labelY, labelText, xloc=xloc.bar_index, yloc=yloc.price, color=labelColor, style=labelStyle, textcolor=color.white, size=size.small)
+trendOK(fast, slow, price, vwap, isCall) =>
+    emaOK  = isCall ? fast > slow : fast < slow
+    vwapOK = isCall ? price > vwap : price < vwap
+    [emaOK, vwapOK]
 
-formatScore(int score) =>
-    "Score: " + str.tostring(score) + "/" + str.tostring(MAX_SCORE)
+// Format time component with leading zero
+formatTimeComponent(val) =>
+    (val < 10 ? '0' : '') + str.tostring(val)
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PERSISTENT STATE - Consolidated flags (one per event instead of alert/label separate)
-// ═══════════════════════════════════════════════════════════════════════════════
-var TradeState callState = TradeState.IDLE
-var TradeState putState = TradeState.IDLE
-var string callEntryMode = ""
-var string putEntryMode = ""
-var int callEntryBar = na
-var int putEntryBar = na
-var bool callEarlyLocked = false
-var bool callEarlyFiredToday = false
-var bool putEarlyLocked  = false
-var bool putEarlyFiredToday = false
-var bool callGapPending = false
-var bool putGapPending = false
-var float callEntryPrice = na
-var float putEntryPrice = na
-var float callStopPrice = na
-var float putStopPrice = na
-var float callT1Final = na
-var float putT1Final = na
-var float callT2Final = na
-var float putT2Final = na
-var float callT3Final = na
-var float putT3Final = na
-var bool callT1Hit = false
-var bool callT2Hit = false
-var bool putT1Hit = false
-var bool putT2Hit = false
+dirFromInput(s) =>
+    s == "PUT" ? TradeDir.PUT : TradeDir.CALL
 
-// Consolidated event handled flags (replaces separate callEntryAlerted/callEntryLabeled, etc.)
-var bool callEventHandled_Early = false
-var bool callEventHandled_GapPend = false
-var bool callEventHandled_Entry = false
-var bool callEventHandled_T1 = false
-var bool callEventHandled_T2 = false
-var bool callEventHandled_Stop = false
-var bool callEventHandled_Exit = false
+entryColor(dir) =>
+    dir == TradeDir.CALL ? color.new(color.green, 40) : color.new(color.red, 40)
 
-var bool putEventHandled_Early = false
-var bool putEventHandled_GapPend = false
-var bool putEventHandled_Entry = false
-var bool putEventHandled_T1 = false
-var bool putEventHandled_T2 = false
-var bool putEventHandled_Stop = false
-var bool putEventHandled_Exit = false
+targetColor(dir) =>
+    dir == TradeDir.CALL ? color.new(color.green, 0) : color.new(color.red, 0)
 
-// Protection alert latches (per-side to allow both Call and Put alerts)
-var bool callSpikeAlertFired = false
-var bool putSpikeAlertFired = false
-var bool callVolumeAlertFired = false
-var bool putVolumeAlertFired = false
-var bool callMiddayAlertFired = false
-var bool putMiddayAlertFired = false
-var bool callSlippageAlertFired = false
-var bool putSlippageAlertFired = false
-var bool callMissedAlertFired = false
-var bool putMissedAlertFired = false
-var bool haltAlertFired = false
-var int configLockTime = na
-configLockTime := na(configLockTime) ? timenow : configLockTime
+// ============================================================================
+// MARKET SESSION & TIME CALCULATIONS
+// ============================================================================
+var string SESSION_STRING = str.format('{0,number,00}{1,number,00}-{2,number,00}{3,number,00}', MARKET_OPEN_HOUR, MARKET_OPEN_MIN, MARKET_CLOSE_HOUR, MARKET_CLOSE_MIN)
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// MARKET DATA
-// ═══════════════════════════════════════════════════════════════════════════════
-[m1Close, m1High, m1Low, m1Close1, m1EmaFast, m1EmaSlow, m1Vwap, m1CandleRange, m1AvgRange, m1Volume, m1VolAvg] = request.security(syminfo.tickerid, "1", [close, high, low, close[1], ta.ema(close, emaFastLen), ta.ema(close, emaSlowLen), ta.vwap(close), high - low, ta.sma(high - low, 20), volume, ta.sma(volume, 20)], lookahead=barmerge.lookahead_off)
-[m5EmaFast, m5EmaSlow, m5Vwap, m5Close] = request.security(syminfo.tickerid, "5", [ta.ema(close, emaFastLen), ta.ema(close, emaSlowLen), ta.vwap(close), close], lookahead=barmerge.lookahead_off)
-[vixCloseRaw, vixEmaRaw] = request.security(vixSymbol, "5", [close, ta.ema(close, 20)], lookahead=barmerge.lookahead_off)
-vixClose = useVixFilter ? vixCloseRaw : na
-vixEma = useVixFilter ? vixEmaRaw : na
-tickRaw = request.security("USI:TICK", timeframe.period, close, lookahead=barmerge.lookahead_off)
-float priceNow  = m1Close
-float priceHigh = m1High
-float priceLow  = m1Low
-float pricePrev = m1Close1
-
-if is1mChart
-    priceNow  := close
-    priceHigh := high
-    priceLow  := low
-    pricePrev := close[1]
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// DERIVED CALCULATIONS
-// ═══════════════════════════════════════════════════════════════════════════════
-var string SESSION_STRING = str.format("{0,number,00}{1,number,00}-{2,number,00}{3,number,00}", 9, 30, 16, 0)
-minutesET = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
-isRTH = not na(time(timeframe.period, SESSION_STRING, "America/New_York"))
+currentHour = hour(time, 'America/New_York')
+currentMin = minute(time, 'America/New_York')
+minutesET = currentHour * 60 + currentMin
+isRTH = not na(time(timeframe.period, SESSION_STRING, 'America/New_York'))
 minutesSinceOpen = minutesET - MARKET_OPEN
 minutesToClose = MARKET_CLOSE - minutesET
 
-// Per-side expiration checks (required when Call & Put have different expirations)
-callExpirationTs = parseExp(callExp)
-putExpirationTs = parseExp(putExp)
-callExpired = not na(callExpirationTs) and time >= callExpirationTs
-putExpired = not na(putExpirationTs) and time >= putExpirationTs
-callDte = na(callExpirationTs) ? 1 : math.max(0, math.floor((callExpirationTs - time) / 86400000))
-putDte = na(putExpirationTs) ? 1 : math.max(0, math.floor((putExpirationTs - time) / 86400000))
-is0DTE = callDte == 0 or putDte == 0
-is1DTE = callDte == 1 or putDte == 1
-
-inCooldown = isRTH and minutesSinceOpen >= 0 and minutesSinceOpen < cooldownMin
+inCooldown = isRTH and minutesSinceOpen < cooldownMin
 lotoWindowOK = minutesSinceOpen >= cooldownMin and minutesSinceOpen < lotoWindowEnd
 confirmedOK = minutesSinceOpen >= confirmedStart
 approachingOK = minutesSinceOpen >= cooldownMin
 
-// VIX gating
-vixTrendUp = useVixFilter and not na(vixEma) and ta.rising(vixEma, 3)
-vixRising = useVixFilter and not na(vixClose) and not na(vixEma) and vixClose > vixEma
-vixLowVol = useVixFilter and not na(vixClose) and vixClose < vixConfirmedMin
-vixHighVol = useVixFilter and not na(vixClose) and vixClose > vixConfirmedMax
-vixAllowsLoto = not useVixFilter or (vixRising and vixTrendUp and not vixLowVol)
-vixAllowsConfirmed = not useVixFilter or not vixHighVol
-
-// TICK confirmation
-tickDataReady = useTick and minutesSinceOpen >= tickStartMin
-tick = tickDataReady ? tickRaw : na
-tickBullish = not useTick or not tickDataReady or na(tick) or tick >= minTickBull
-tickBearish = not useTick or not tickDataReady or na(tick) or tick <= maxTickBear
-
-// Exit timing
-forceExit = (is0DTE or is1DTE) and minutesToClose <= FORCE_EXIT_MIN
-isExit15MinWarning = (is0DTE or is1DTE) and minutesToClose <= EXIT_WARNING_MIN and minutesToClose > FORCE_EXIT_MIN
-
-// Filters
-isSpike = useSpikeFilter and not na(m1AvgRange) and m1CandleRange > m1AvgRange * spikeMultiplier
-volumeOK = not useVolumeConfirm or (bar_index > 20 and not na(m1VolAvg) and m1Volume > m1VolAvg * volumeMultiplier)
 inMiddayChop = useMiddayFilter and minutesET >= MIDDAY_START and minutesET < MIDDAY_END
-// Note: Halt detection uses realtime-only gap calculation, so halts won't be detected in replay mode
-haltGapMinutes = barstate.isrealtime and not na(time[1]) ? (time - time[1]) / 60000 : 0
-haltAllowed = minutesSinceOpen >= 3 //Ignore Halt for 3 mins
-isPossibleHalt = useHaltDetection and haltAllowed and haltGapMinutes >= haltGapThreshold and isRTH and isRTH[1] and bar_index > 10
-barsSinceHalt = ta.barssince(isPossibleHalt)
-inHaltCooldown = useHaltDetection and not na(barsSinceHalt) and barsSinceHalt <= haltCooldownBars
-isFlatBar = useFlatBarFilter and priceHigh == priceLow
-canEnterTime = minutesToClose > entryCutoffMin
-cooldownJustEnded = minutesSinceOpen == cooldownMin and minutesSinceOpen[1] < cooldownMin
 
-callCommonEntryFilters = isRTH and not callExpired and not isSpike and volumeOK and not inMiddayChop and not forceExit and not isPossibleHalt and not inHaltCooldown and not isFlatBar and canEnterTime
-putCommonEntryFilters = isRTH and not putExpired and not isSpike and volumeOK and not inMiddayChop and not forceExit and not isPossibleHalt and not inHaltCooldown and not isFlatBar and canEnterTime
-callBaseEntryFilters = callCommonEntryFilters // and not cooldownJustEnded
-putBaseEntryFilters = putCommonEntryFilters // and not cooldownJustEnded
+isConfirmedBar = barstate.isconfirmed
+isLastBar = barstate.islast
+chartTicker = str.upper(syminfo.ticker)
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// TREND DETECTION
-// ═══════════════════════════════════════════════════════════════════════════════
-emaBullish5m = m5EmaFast > m5EmaSlow
-emaBearish5m = m5EmaFast < m5EmaSlow
-vwapBullish5m = m5Close > m5Vwap
-vwapBearish5m = m5Close < m5Vwap
-confirmedUptrend = emaBullish5m and (not useVwapConfirm or m5Close >= m5Vwap - 0.05)
-confirmedDowntrend = emaBearish5m and (not useVwapConfirm or m5Close <= m5Vwap + 0.05)
+var int configLockTime = na
+configLockTime := na(configLockTime) ? timenow : configLockTime
 
-emaBullish1m = m1EmaFast > m1EmaSlow
-emaBearish1m = m1EmaFast < m1EmaSlow
-vwapBullish1m = m1Close > m1Vwap
-vwapBearish1m = m1Close < m1Vwap
-lotoUptrend = emaBullish1m and (not useVwapConfirm or vwapBullish1m)
-lotoDowntrend = emaBearish1m and (not useVwapConfirm or vwapBearish1m)
-pureDowntrend5m = emaBearish5m and vwapBearish5m
-pureUptrend5m = emaBullish5m and vwapBullish5m
+// ============================================================================
+// MAIN PROCESSING FUNCTION
+// 3-Layer Architecture: Signal Layer → State Machine → Event Queue
+// Returns: [entryMode, entryPrice, stopPrice, t1Final, t2Final, dte, currentPrice, wasFirstTrade]
+// ============================================================================
+processTicker(tickerIdx, enabled, sym, expTs, entryLevel, targetPrice, dir, stateArr, entryModeArr, entryBarArr, entryPriceArr, stopPriceArr, t1FinalArr, t2FinalArr, exitBarArr, eventQueue, earlyFiredArr, gapPendingArr, hadTradeArr, partialTakenArr) =>
+    returnEntryMode = ''
+    returnEntryPrice = 0.0
+    returnStopPrice = 0.0
+    returnT1 = 0.0
+    returnT2 = 0.0
+    returnDte = 999
+    returnPrice = 0.0
+    returnWasFirstTrade = false
 
-// Entry permissions
-callConfirmedAllowed = not useTrendFilter or confirmedUptrend
-putConfirmedAllowed = not useTrendFilter or confirmedDowntrend
-callLotoAllowed = useLotoAlert and lotoUptrend and not pureDowntrend5m and (allowLotoReentry or callState != TradeState.IN_TRADE) and vixAllowsLoto
-putLotoAllowed = useLotoAlert and lotoDowntrend and not pureUptrend5m and (allowLotoReentry or putState != TradeState.IN_TRADE) and vixAllowsLoto
-callConfirmedAllowed := callConfirmedAllowed and vixAllowsConfirmed and tickBullish
-putConfirmedAllowed := putConfirmedAllowed and vixAllowsConfirmed and tickBearish
+    // Clear event queue for this bar
+    array.clear(eventQueue)
 
-lateLoto = minutesSinceOpen > 25
-callLotoAllowed := callLotoAllowed and (not lateLoto or pureUptrend5m)
-putLotoAllowed := putLotoAllowed and (not lateLoto or pureDowntrend5m)
+    if enabled and entryLevel > 0
+        // Fetch multi-timeframe data
+        [tickerClose, tickerHigh, tickerLow, tickerClose1, tickerEmaFast, tickerEmaSlow, tickerVwap, tickerRange, tickerAvgRange, tickerVol, tickerVolAvg] = request.security(sym, '1', [close, high, low, close[1], ta.ema(close, emaFastLen), ta.ema(close, emaSlowLen), ta.vwap, high - low, ta.sma(high - low, 20), volume, ta.sma(volume, 20)], lookahead = barmerge.lookahead_off)
+        [m5EmaFast, m5EmaSlow, m5Vwap, m5Close] = request.security(sym, '5', [ta.ema(close, emaFastLen), ta.ema(close, emaSlowLen), ta.vwap, close])
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// HELPER CONDITIONS
-// ═══════════════════════════════════════════════════════════════════════════════
-hasCall = enableCall and callEntry > 0 and callTargetPrice > callEntry
-hasPut = enablePut and putEntry > 0 and putTargetPrice < putEntry
-callApproaching = hasCall and priceLow < callEntry and priceHigh >= callEntry - earlyAlertDist and approachingOK
-putApproaching = hasPut and priceHigh > putEntry and priceLow <= putEntry + earlyAlertDist and approachingOK
-callBreak = hasCall and priceNow >= callEntry and pricePrev < callEntry
-putBreak = hasPut and priceNow <= putEntry and pricePrev > putEntry
-isFirstBarOfDay = isRTH and not isRTH[1]
-callGapThrough = isFirstBarOfDay and hasCall and priceNow >= callEntry
-putGapThrough = isFirstBarOfDay and hasPut and priceNow <= putEntry
-callBreakOrGap = callBreak or callGapThrough or (callGapPending and priceNow >= callEntry)
-putBreakOrGap = putBreak or putGapThrough or (putGapPending and priceNow <= putEntry)
+        returnPrice := tickerClose
+        isCall = dir == TradeDir.CALL
 
-// Allow entry if price is at entry level (handles case where opposite trade exits and price was at entry)
-callPriceAtEntry = hasCall and math.abs(priceNow - callEntry) <= 0.10 and (callState == TradeState.IDLE or callState == TradeState.EARLY)
-putPriceAtEntry = hasPut and math.abs(priceNow - putEntry) <= 0.10 and (putState == TradeState.IDLE or putState == TradeState.EARLY)
+        // Calculate expiry and force exit conditions
+        dte = na(expTs) ? 1 : math.max(0, math.floor((expTs - time) / 86400000))
+        returnDte := dte
+        isExpired = not na(expTs) and time >= expTs
+        forceExit = (dte == 0 or dte == 1) and minutesToClose <= FORCE_EXIT_MIN and minutesToClose >= 0
 
-callCanEnter = (callBreakOrGap or callPriceAtEntry) and callBaseEntryFilters and priceNow <= callEntry + MAX_ENTRY_SLIPPAGE
-callLotoReady = callCanEnter and (not useLotoWindow or lotoWindowOK) and callLotoAllowed
-callConfirmedReady = callCanEnter and confirmedOK and callConfirmedAllowed and not callLotoReady
-callPriceAtEntryMinimalFilters = isRTH and not callExpired and not forceExit
-callPriceAtEntryBasicAllowed = not useTrendFilter or confirmedUptrend
-callPriceAtEntryReady = callPriceAtEntry and callPriceAtEntryMinimalFilters and callPriceAtEntryBasicAllowed and not callLotoReady
-callReadyToEnter = (callState == TradeState.IDLE or callState == TradeState.EARLY) and callState != TradeState.EXITED and (callLotoReady or callConfirmedReady or callPriceAtEntryReady)
-callEntryType = callLotoReady ? "LOTO" : (callConfirmedReady or callPriceAtEntryReady) ? "CONFIRMED" : ""
+        // Load state from arrays
+        state = array.get(stateArr, tickerIdx)
+        entryMode = array.get(entryModeArr, tickerIdx)
+        entryBar = array.get(entryBarArr, tickerIdx)
+        exitBar = array.get(exitBarArr, tickerIdx)
+        entryPrice = array.get(entryPriceArr, tickerIdx)
+        stopPrice = array.get(stopPriceArr, tickerIdx)
+        t1Final = array.get(t1FinalArr, tickerIdx)
+        t2Final = array.get(t2FinalArr, tickerIdx)
+        earlyFired = array.get(earlyFiredArr, tickerIdx)
+        gapPending = array.get(gapPendingArr, tickerIdx)
+        hadTrade = array.get(hadTradeArr, tickerIdx)
+        partialTaken = array.get(partialTakenArr, tickerIdx)
 
-putCanEnter = (putBreakOrGap or putPriceAtEntry) and putBaseEntryFilters and priceNow >= putEntry - MAX_ENTRY_SLIPPAGE
-putLotoReady = putCanEnter and (not useLotoWindow or lotoWindowOK) and putLotoAllowed
-putConfirmedReady = putCanEnter and confirmedOK and putConfirmedAllowed and not putLotoReady
-putPriceAtEntryMinimalFilters = isRTH and not putExpired and not forceExit
-putPriceAtEntryBasicAllowed = not useTrendFilter or confirmedDowntrend
-putPriceAtEntryReady = putPriceAtEntry and putPriceAtEntryMinimalFilters and putPriceAtEntryBasicAllowed and not putLotoReady
-putReadyToEnter = (putState == TradeState.IDLE or putState == TradeState.EARLY) and putState != TradeState.EXITED and (putLotoReady or putConfirmedReady or putPriceAtEntryReady)
-putEntryType = putLotoReady ? "LOTO" : (putConfirmedReady or putPriceAtEntryReady) ? "CONFIRMED" : ""
+        // SIGNAL LAYER (Pure Conditions - No State Mutation)
+        // Entry filters
+        isSpike = useSpikeFilter and not na(tickerAvgRange) and tickerRange > tickerAvgRange * spikeMultiplier
+        volumeOK = not useVolumeConfirm or bar_index > 20 and not na(tickerVolAvg) and tickerVol > tickerVolAvg * volumeMultiplier
 
-callSlippageBlocked = callBreakOrGap and callCommonEntryFilters and priceNow > callEntry + MAX_ENTRY_SLIPPAGE and (callState == TradeState.IDLE or callState == TradeState.EARLY) and (not useTrendFilter or confirmedUptrend) and (callLotoAllowed or callConfirmedAllowed)
-callMissedGap = isFirstBarOfDay and hasCall and priceNow > callEntry + MAX_ENTRY_SLIPPAGE and priceNow < callTargetPrice and callState == TradeState.IDLE
-putSlippageBlocked = putBreakOrGap and putCommonEntryFilters and priceNow < putEntry - MAX_ENTRY_SLIPPAGE and (putState == TradeState.IDLE or putState == TradeState.EARLY) and (not useTrendFilter or confirmedDowntrend) and (putLotoAllowed or putConfirmedAllowed)
-putMissedGap = isFirstBarOfDay and hasPut and priceNow < putEntry - MAX_ENTRY_SLIPPAGE and priceNow > putTargetPrice and putState == TradeState.IDLE
+        // Trend analysis (direction-aware)
+        [emaTrend1m, vwapTrend1m] = trendOK(tickerEmaFast, tickerEmaSlow, tickerClose, tickerVwap, isCall)
+        lotoTrendOK = emaTrend1m and (not useVwapConfirm or vwapTrend1m)
 
-if callSlippageBlocked and barstate.isconfirmed and not callSlippageAlertFired
-    handleTradeEvent(true, "[SLIPPAGE] CALL $" + str.tostring(callStrike, "#") + "C blocked", "SLIPPAGE", color.new(color.red, 70), false, priceHigh, showProtectionAlerts, true)
-    callSlippageAlertFired := true
-if putSlippageBlocked and barstate.isconfirmed and not putSlippageAlertFired
-    handleTradeEvent(false, "[SLIPPAGE] PUT $" + str.tostring(putStrike, "#") + "P blocked", "SLIPPAGE", color.new(color.red, 70), true, priceLow, showProtectionAlerts, true)
-    putSlippageAlertFired := true
+        emaTrend5m = isCall ? m5EmaFast > m5EmaSlow : m5EmaFast < m5EmaSlow
+        vwapTrend5m = isCall ? m5Close > m5Vwap : m5Close < m5Vwap
+        confirmedTrendOK = emaTrend5m and (not useVwapConfirm or vwapTrend5m)
 
-if callMissedGap and isAlertBar and not callMissedAlertFired
-    handleTradeEvent(true, "[MISSED] CALL $" + str.tostring(callStrike) + "C | Opened beyond entry", "MISSED", color.new(color.gray, 40), false,priceHigh, true, true)
-    callMissedAlertFired := true
-if putMissedGap and isAlertBar and not putMissedAlertFired
-    handleTradeEvent(false,  "[MISSED] PUT $" + str.tostring(putStrike) + "P | Opened beyond entry", "MISSED", color.new(color.gray, 40), true, priceLow, true, true)
-    putMissedAlertFired := true
+        pureCounterTrend5m = isCall ? m5EmaFast < m5EmaSlow and m5Close < m5Vwap : m5EmaFast > m5EmaSlow and m5Close > m5Vwap
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// ENTRY SCORE (0–6)
-// ═══════════════════════════════════════════════════════════════════════════════
-scoreTrendCall   = confirmedUptrend ? 1 : 0
-scoreTrendPut    = confirmedDowntrend ? 1 : 0
-scoreVwapCall    = not useVwapConfirm or vwapBullish5m ? 1 : 0
-scoreVwapPut     = not useVwapConfirm or vwapBearish5m ? 1 : 0
-scoreVolume      = volumeOK ? 1 : 0
-scoreNoSpike     = not isSpike ? 1 : 0
-scoreNoMidday    = not inMiddayChop ? 1 : 0
-scoreTickCall    = not useTick or tickBullish ? 1 : 0
-scoreTickPut     = not useTick or tickBearish ? 1 : 0
+        lotoAllowed = useLotoAlert and lotoTrendOK and not pureCounterTrend5m and not hadTrade
+        confirmedAllowed = (not useTrendFilter or confirmedTrendOK) and not pureCounterTrend5m
 
-callEntryScore = scoreTrendCall + scoreVwapCall + scoreVolume + scoreNoSpike + scoreNoMidday + scoreTickCall
-putEntryScore = scoreTrendPut + scoreVwapPut + scoreVolume + scoreNoSpike + scoreNoMidday + scoreTickPut
+        // Pure signal conditions (no state mutation)
+        earlyDist = entryLevel * (earlyAlertDist / 100)
+        earlyLevelPrice = isCall ? entryLevel - earlyDist : entryLevel + earlyDist
+        earlyCond = isCall ? tickerClose < entryLevel and tickerClose >= earlyLevelPrice : tickerClose > entryLevel and tickerClose <= earlyLevelPrice
+        earlyCond := earlyCond and approachingOK and isRTH and not isExpired and not earlyFired
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// GENERIC TRADE PROCESSING FUNCTION - Eliminates Call/Put duplication
-// ═══════════════════════════════════════════════════════════════════════════════
-processTrade(bool isCall, TradeState state, bool earlyFiredToday, bool earlyLocked, bool gapPending, float entryPrice, float stopPrice, float t1Final, float t2Final, float t3Final, bool t1Hit, bool t2Hit, int entryBar, string entryMode, bool eventHandled_Early, bool eventHandled_GapPend, bool eventHandled_Entry, bool eventHandled_T1, bool eventHandled_T2, bool eventHandled_Stop, bool eventHandled_Exit, float entry, float target, float strike, string exp, bool approaching, bool breakOrGap, bool priceAtEntry, bool readyToEnter, string entryType, bool gapThrough, bool expired, int entryScore ) =>
-    TradeState newState = state
-    bool newEarlyFiredToday = earlyFiredToday
-    bool newEarlyLocked = earlyLocked
-    bool newGapPending = gapPending
-    float newEntryPrice = entryPrice
-    float newStopPrice = stopPrice
-    float newT1Final = t1Final
-    float newT2Final = t2Final
-    float newT3Final = t3Final
-    bool newT1Hit = t1Hit
-    bool newT2Hit = t2Hit
-    int newEntryBar = entryBar
-    string newEntryMode = entryMode
-    bool newEventHandled_Early = eventHandled_Early
-    bool newEventHandled_GapPend = eventHandled_GapPend
-    bool newEventHandled_Entry = eventHandled_Entry
-    bool newEventHandled_T1 = eventHandled_T1
-    bool newEventHandled_T2 = eventHandled_T2
-    bool newEventHandled_Stop = eventHandled_Stop
-    bool newEventHandled_Exit = eventHandled_Exit
-    
-    scoreText = formatScore(entryScore)
-    // Handle gap pending
-    if gapThrough and inCooldown and not gapPending
-        newGapPending := true
-        if not eventHandled_GapPend
-            handleTradeEvent(isCall, "[GAP PENDING] " + (isCall ? "CALL" : "PUT") + " $" + str.tostring(strike, "#") + (isCall ? "C" : "P") + " | Entry queued", "GAP", color.new(color.orange, 50), not isCall, isCall ? priceHigh : priceLow, showWarningAlerts, true)
-            newEventHandled_GapPend := true
-    
-    // Reset gap pending if conditions no longer allow entry (time cutoff, midday chop, or expired)
-    if gapPending and (not canEnterTime or inMiddayChop or expired)
-        newGapPending := false
-        newEventHandled_GapPend := false
-    
-    // Handle early alert
-    earlyFilters = isRTH and not expired and not isSpike and volumeOK and not inMiddayChop and not isPossibleHalt and not inHaltCooldown and canEnterTime
-    if state == TradeState.IDLE and approaching and earlyFilters and not earlyLocked
-        newState := TradeState.EARLY
-        newEarlyFiredToday := true
-        newEarlyLocked := true
+        isFirstBarOfDay = isRTH and not isRTH[1]
+        priceBreak = isCall ? tickerClose >= entryLevel and tickerClose1 < entryLevel : tickerClose <= entryLevel and tickerClose1 > entryLevel
+        entryCond = priceBreak and isRTH and minutesSinceOpen >= cooldownMin and not isFirstBarOfDay and not isExpired
 
-        if not eventHandled_Early
-            handleTradeEvent(isCall, "[EARLY] " + (isCall ? "CALL" : "PUT") + " $" + str.tostring(strike, "#") + (isCall ? "C" : "P") + " " + exp + " | $" + str.tostring(priceNow, "#.##") + " → $" + str.tostring(entry, "#.##"), "EARLY", color.new(color.yellow, 20), not isCall, isCall ? priceHigh : priceLow)
-            newEventHandled_Early := true
-    
-    // Handle entry
-    if readyToEnter and not eventHandled_Entry
-        newEntryPrice := entry
-        newStopPrice := isCall ? entry - stopOffset : entry + stopOffset
-        targetDist = isCall ? target - entry : entry - target
-        newT1Final := newEntryPrice + (targetDist * T1_PCT * (isCall ? 1 : -1))
-        newT2Final := newEntryPrice + (targetDist * T2_PCT * (isCall ? 1 : -1))
-        newT3Final := newEntryPrice + (targetDist * (isCall ? 1 : -1))
-        newEntryMode := entryType
-        newEntryBar := bar_index
-        newGapPending := false
-        newState := TradeState.IN_TRADE
-        newT1Hit := false
-        newT2Hit := false
-        // Reset event flags for new trade
-        newEventHandled_Early := false
-        newEventHandled_T1 := false
-        newEventHandled_T2 := false
-        newEventHandled_Stop := false
-        newEventHandled_Exit := false
-        
-        // Fire entry event immediately
-        labelText = (entryType == "LOTO" ? "LOTO" : (entryType == "CONFIRMED" ? "CONFIRMED" : (isCall ? "CALL" : "PUT"))) + "\n" + scoreText
-        handleTradeEvent(isCall, "[" + (isCall ? "CALL" : "PUT") + "][" + entryType + "][" + "SCORE " + str.tostring(entryScore) + "/" + str.tostring(MAX_SCORE) + "] $" + str.tostring(strike) + " " + exp + " E$" + str.tostring(newEntryPrice), labelText, entryType == "LOTO" ? color.orange : (isCall ? color.green : color.new(color.red, 20)), isCall, isCall ? priceLow : priceHigh)
-        newEventHandled_Entry := true
-    
-    // Handle targets and stops while in trade
-    if newState == TradeState.IN_TRADE and bar_index > newEntryBar
-        // Check stop loss (before targets)
-        if newState == TradeState.IN_TRADE and not newEventHandled_Exit and not na(newStopPrice)
-            stopHit = isCall ? priceLow <= newStopPrice : priceHigh >= newStopPrice
-            if stopHit
-                newState := TradeState.EXITED
-                newEarlyFiredToday := false
-                newEarlyLocked := false
-                newEventHandled_Early := false
-                if not newEventHandled_Stop
-                    handleTradeEvent(isCall, "[" + (isCall ? "CALL" : "PUT") + " STOP HIT]", "STOP", color.red, isCall, isCall ? priceLow : priceHigh)
-                    newEventHandled_Stop := true
-                    newEventHandled_Exit := true
-        if newState == TradeState.IN_TRADE
-            // Check T1
-            if not newT1Hit and not na(newT1Final)
-                t1HitNow = isCall ? priceHigh >= newT1Final : priceLow <= newT1Final
-                if t1HitNow
-                    newT1Hit := true
-                    if useBreakEvenStop
-                        newStopPrice := newEntryPrice
-                    if not newEventHandled_T1
-                        t1Msg = useBreakEvenStop ? " Stop→BE" : ""
-                        handleTradeEvent(isCall, "[" + (isCall ? "CALL" : "PUT") + " T1] $" + str.tostring(newT1Final, "#.##") + t1Msg, "T1", color.new(color.blue, 20), not isCall, getLabelOffset(isCall, priceHigh, priceLow))
-                        newEventHandled_T1 := true
-            
-            // Check T2
-            if newT1Hit and not newT2Hit and not na(newT2Final)
-                t2HitNow = isCall ? priceHigh >= newT2Final : priceLow <= newT2Final
-                if t2HitNow
-                    newT2Hit := true
-                    if useTrailingStop
-                        newStopPrice := newT1Final
-                    if not newEventHandled_T2
-                        t2Msg = useTrailingStop ? " Stop→T1" : ""
-                        handleTradeEvent(isCall, "[" + (isCall ? "CALL" : "PUT") + " T2] $" + str.tostring(newT2Final, "#.##") + t2Msg, "T2", color.blue, not isCall, getLabelOffset(isCall, priceHigh, priceLow))
-                        newEventHandled_T2 := true
-            
-            // Check T3 (target hit)
-            if newT2Hit and not na(newT3Final)
-                t3Hit = isCall ? priceHigh >= newT3Final : priceLow <= newT3Final
-                if t3Hit
-                    newState := TradeState.EXITED
-                    newEarlyFiredToday := false
-                    newEarlyLocked := false
-                    newEventHandled_Early := false
-                    
-                    if not newEventHandled_Exit
-                        handleTradeEvent(isCall, "[" + (isCall ? "CALL" : "PUT") + " TARGET HIT]", "TARGET", color.green, not isCall, getLabelOffset(isCall, priceHigh, priceLow))
-                        newEventHandled_Exit := true
-    
-    // Handle early state reset
-    if newState == TradeState.EARLY
-        earlyDisengaged = isCall ? low > callEntry + earlyAlertDist : high < putEntry - earlyAlertDist
-        if earlyDisengaged
-            newState := TradeState.IDLE  // Reset state to IDLE
-            newEarlyFiredToday := false  // Allow EARLY to trigger again
-            newEarlyLocked := false      // Unlock EARLY alert
-    
-    // Handle exited state cleanup
-    if newState == TradeState.EXITED and bar_index > newEntryBar
-        newT1Hit := false
-        newT2Hit := false
-        newEarlyFiredToday := false
-        newEarlyLocked := false
-        newEventHandled_Early := false
-        newEventHandled_Entry := false
-        newEventHandled_Stop := false
-        newEventHandled_Exit := false
-        newState := TradeState.IDLE
+        gapThrough = isFirstBarOfDay and (isCall ? tickerClose >= entryLevel : tickerClose <= entryLevel)
 
-    [newState, newEarlyFiredToday, newEarlyLocked, newGapPending, newEntryPrice, newStopPrice, newT1Final, newT2Final, newT3Final, newT1Hit, newT2Hit, newEntryBar, newEntryMode, newEventHandled_Early, newEventHandled_GapPend, newEventHandled_Entry, newEventHandled_T1, newEventHandled_T2, newEventHandled_Stop, newEventHandled_Exit]
+        localGapPending = gapPending
+        if gapThrough and (inCooldown or minutesSinceOpen == cooldownMin) and not gapPending
+            localGapPending := true
+            array.push(eventQueue, TradeEvent.GAP_PENDING)
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// STATE MACHINE - Using unified trade processing function
-// ═══════════════════════════════════════════════════════════════════════════════
-// Process CALL trade - assign to temp vars first, then to var variables
-[callStateNew, callEarlyFiredTodayNew, callEarlyLockedNew, callGapPendingNew, callEntryPriceNew, callStopPriceNew, callT1FinalNew, callT2FinalNew, callT3FinalNew, callT1HitNew, callT2HitNew, callEntryBarNew, callEntryModeNew, callEventHandled_EarlyNew, callEventHandled_GapPendNew, callEventHandled_EntryNew, callEventHandled_T1New, callEventHandled_T2New, callEventHandled_StopNew, callEventHandled_ExitNew] = processTrade(true, callState, callEarlyFiredToday, callEarlyLocked, callGapPending, callEntryPrice, callStopPrice, callT1Final, callT2Final, callT3Final, callT1Hit, callT2Hit, callEntryBar, callEntryMode, callEventHandled_Early, callEventHandled_GapPend, callEventHandled_Entry, callEventHandled_T1, callEventHandled_T2, callEventHandled_Stop, callEventHandled_Exit, callEntry, callTargetPrice, callStrike, callExp, callApproaching, callBreakOrGap, callPriceAtEntry, callReadyToEnter, callEntryType, callGapThrough, callExpired, callEntryScore)
-callState := callStateNew
-callEarlyFiredToday := callEarlyFiredTodayNew
-callEarlyLocked := callEarlyLockedNew
-callGapPending := callGapPendingNew
-callEntryPrice := callEntryPriceNew
-callStopPrice := callStopPriceNew
-callT1Final := callT1FinalNew
-callT2Final := callT2FinalNew
-callT3Final := callT3FinalNew
-callT1Hit := callT1HitNew
-callT2Hit := callT2HitNew
-callEntryBar := callEntryBarNew
-callEntryMode := callEntryModeNew
-callEventHandled_Early := callEventHandled_EarlyNew
-callEventHandled_GapPend := callEventHandled_GapPendNew
-callEventHandled_Entry := callEventHandled_EntryNew
-callEventHandled_T1 := callEventHandled_T1New
-callEventHandled_T2 := callEventHandled_T2New
-callEventHandled_Stop := callEventHandled_StopNew
-callEventHandled_Exit := callEventHandled_ExitNew
+        gapPendingExpired = localGapPending and not inCooldown
+        if gapPendingExpired
+            localGapPending := false
 
-// Process PUT trade - assign to temp vars first, then to var variables
-[putStateNew, putEarlyFiredTodayNew, putEarlyLockedNew, putGapPendingNew, putEntryPriceNew, putStopPriceNew, putT1FinalNew, putT2FinalNew, putT3FinalNew, putT1HitNew, putT2HitNew, putEntryBarNew, putEntryModeNew, putEventHandled_EarlyNew, putEventHandled_GapPendNew, putEventHandled_EntryNew, putEventHandled_T1New, putEventHandled_T2New, putEventHandled_StopNew, putEventHandled_ExitNew] = processTrade(false, putState, putEarlyFiredToday, putEarlyLocked, putGapPending, putEntryPrice, putStopPrice, putT1Final, putT2Final, putT3Final, putT1Hit, putT2Hit, putEntryBar, putEntryMode, putEventHandled_Early, putEventHandled_GapPend, putEventHandled_Entry, putEventHandled_T1, putEventHandled_T2, putEventHandled_Stop, putEventHandled_Exit, putEntry, putTargetPrice, putStrike, putExp, putApproaching, putBreakOrGap, putPriceAtEntry, putReadyToEnter, putEntryType, putGapThrough, putExpired, putEntryScore)
-putState := putStateNew
-putEarlyFiredToday := putEarlyFiredTodayNew
-putEarlyLocked := putEarlyLockedNew
-putGapPending := putGapPendingNew
-putEntryPrice := putEntryPriceNew
-putStopPrice := putStopPriceNew
-putT1Final := putT1FinalNew
-putT2Final := putT2FinalNew
-putT3Final := putT3FinalNew
-putT1Hit := putT1HitNew
-putT2Hit := putT2HitNew
-putEntryBar := putEntryBarNew
-putEntryMode := putEntryModeNew
-putEventHandled_Early := putEventHandled_EarlyNew
-putEventHandled_GapPend := putEventHandled_GapPendNew
-putEventHandled_Entry := putEventHandled_EntryNew
-putEventHandled_T1 := putEventHandled_T1New
-putEventHandled_T2 := putEventHandled_T2New
-putEventHandled_Stop := putEventHandled_StopNew
-putEventHandled_Exit := putEventHandled_ExitNew
+        breakOrGap = priceBreak or gapThrough or localGapPending and (isCall ? tickerClose >= entryLevel : tickerClose <= entryLevel) or gapPendingExpired and (isCall ? tickerClose >= entryLevel : tickerClose <= entryLevel)
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SYSTEM & PROTECTION EVENTS
-// ═══════════════════════════════════════════════════════════════════════════════
-if forceExit and not forceExit[1] and (callState == TradeState.IN_TRADE or putState == TradeState.IN_TRADE)
-    callEventHandled_Early := false
-    putEventHandled_Early := false
-    callEarlyLocked := false
-    putEarlyLocked := false
+        maxSlip = entryLevel * (MAX_ENTRY_SLIPPAGE / 100)
+        slippageOK = isCall ? tickerClose <= entryLevel + maxSlip : tickerClose >= entryLevel - maxSlip
 
-    if callState == TradeState.IN_TRADE
-        callState := TradeState.EXITED
-        callEarlyFiredToday := false
-        if not callEventHandled_Exit
-            handleTradeEvent(true, "[CALL FORCE EXIT]", "EXIT", color.purple, false, priceHigh)
-            callEventHandled_Exit := true
-    if putState == TradeState.IN_TRADE
-        putState := TradeState.EXITED
-        putEarlyFiredToday := false
-        if not putEventHandled_Exit
-            handleTradeEvent(false, "[PUT FORCE EXIT]", "EXIT", color.purple, true, priceLow)
-            putEventHandled_Exit := true
+        validTarget = isCall ? targetPrice > entryLevel : targetPrice < entryLevel
 
-if isExit15MinWarning and not isExit15MinWarning[1] and (callState == TradeState.IN_TRADE or putState == TradeState.IN_TRADE)
-    if isAlertBar and showWarningAlerts
-        handleTradeEvent(true, "[15 MIN WARNING] Close position soon", "15MIN", color.new(color.yellow, 30), false, priceHigh, true, true)
+        canEnter = breakOrGap and isRTH and minutesSinceOpen >= cooldownMin and not isFirstBarOfDay and not isExpired and not isSpike and volumeOK and not inMiddayChop and slippageOK and not forceExit and validTarget
+        lotoReady = canEnter and lotoWindowOK and lotoAllowed
+        confirmedReady = canEnter and confirmedOK and confirmedAllowed
 
-if isSpike and callBreakOrGap and isRTH and barstate.isconfirmed and not callSpikeAlertFired
-    if isAlertBar and showProtectionAlerts
-        alert("[SPIKE] CALL Entry blocked", alert.freq_once_per_bar)
-    callSpikeAlertFired := true
+        // Tick-accurate target/stop conditions (use high/low, not close)
+        t1Cond = not na(t1Final) and t1Final > 0 and (isCall ? tickerHigh >= t1Final : tickerLow <= t1Final)
+        t2Cond = not na(t2Final) and t2Final > 0 and (isCall ? tickerHigh >= t2Final : tickerLow <= t2Final)
+        stopCond = not na(stopPrice) and (isCall ? tickerLow <= stopPrice : tickerHigh >= stopPrice)
 
-if isSpike and putBreakOrGap and isRTH and barstate.isconfirmed and not putSpikeAlertFired
-    if isAlertBar and showProtectionAlerts
-        alert("[SPIKE] PUT Entry blocked", alert.freq_once_per_bar)
-    putSpikeAlertFired := true
+        dropThreshold = entryLevel * (DROP_THRESHOLD / 100)
+        earlyDropCondition = isCall ? tickerClose < earlyLevelPrice - dropThreshold : tickerClose > earlyLevelPrice + dropThreshold
 
-if not volumeOK and callBreakOrGap and isRTH and not isSpike and barstate.isconfirmed and not callVolumeAlertFired
-    if isAlertBar and showProtectionAlerts
-        alert("[LOW VOL] CALL Entry blocked", alert.freq_once_per_bar)
-    callVolumeAlertFired := true
+        entryReady = entryCond and validTarget and (lotoReady or confirmedReady)
 
-if not volumeOK and putBreakOrGap and isRTH and not isSpike and barstate.isconfirmed and not putVolumeAlertFired
-    if isAlertBar and showProtectionAlerts
-        alert("[LOW VOL] PUT Entry blocked", alert.freq_once_per_bar)
-    putVolumeAlertFired := true
+        // STATE MACHINE (Clean & Ordered)
+        if state == TradeState.IDLE
+            if earlyCond
+                state := TradeState.EARLY
+                earlyFired := true
+                array.push(eventQueue, TradeEvent.EARLY)
 
-if inMiddayChop and callBreakOrGap and isRTH and not isSpike and volumeOK and barstate.isconfirmed and not callMiddayAlertFired
-    if isAlertBar and showProtectionAlerts
-        alert("[MIDDAY] CALL Entry blocked", alert.freq_once_per_bar)
-    callMiddayAlertFired := true
+            if entryReady
+                returnWasFirstTrade := not hadTrade
+                entryPrice := entryLevel
+                stopOffset = entryLevel * (stopOffsetPct / 100)
+                stopPrice := isCall ? entryPrice - stopOffset : entryPrice + stopOffset
 
-if inMiddayChop and putBreakOrGap and isRTH and not isSpike and volumeOK and barstate.isconfirmed and not putMiddayAlertFired
-    if isAlertBar and showProtectionAlerts
-        alert("[MIDDAY] PUT Entry blocked", alert.freq_once_per_bar)
-    putMiddayAlertFired := true
+                targetDist = math.abs(targetPrice - entryLevel)
+                t1Final := isCall ? entryPrice + targetDist * T1_PCT : entryPrice - targetDist * T1_PCT
+                t2Final := targetPrice
 
-if isPossibleHalt and not haltAlertFired and isRTH
-    if isAlertBar and showWarningAlerts
-        alert("[HALT] " + str.tostring(haltGapMinutes, "#") + "min gap detected", alert.freq_once_per_bar)
-    haltAlertFired := true
+                entryMode := lotoReady ? 'LOTO' : 'CONFIRMED'
+                entryBar := bar_index
+                localGapPending := false
+                hadTrade := true
+                state := TradeState.IN_TRADE
+                array.push(eventQueue, TradeEvent.ENTRY)
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// LEVEL LINES
-// ═══════════════════════════════════════════════════════════════════════════════
-isSPY = str.upper(syminfo.ticker) == "SPY"
-showCallLines = showLevelLines and isSPY and enableCall and callEntry > 0
-showPutLines = showLevelLines and isSPY and enablePut and putEntry > 0
-plot(showCallLines ? callEntry : na, "CALL Entry", color=color.new(color.green, 40), linewidth=2, style=plot.style_linebr)
-plot(showCallLines ? callTargetPrice : na, "CALL Target", color=color.green, linewidth=2, style=plot.style_linebr)
-plot(showPutLines ? putEntry : na, "PUT Entry", color=color.new(color.red, 40), linewidth=2, style=plot.style_linebr)
-plot(showPutLines ? putTargetPrice : na, "PUT Target", color=color.red, linewidth=2, style=plot.style_linebr)
+            else if entryCond and validTarget
+                returnWasFirstTrade := not hadTrade
+                entryPrice := entryLevel
+                stopOffset = entryLevel * (stopOffsetPct / 100)
+                stopPrice := isCall ? entryPrice - stopOffset : entryPrice + stopOffset
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// DAILY RESET
-// ═══════════════════════════════════════════════════════════════════════════════
-if ta.change(time("D", "America/New_York")) != 0
-    if callState == TradeState.IN_TRADE or putState == TradeState.IN_TRADE
-        if isAlertBar
-            handleTradeEvent(true, "[FORCE EXIT] EXIT NOW", "EXIT", color.purple, false, priceHigh, true, true)
-    callState := TradeState.IDLE
-    callEntryPrice := na
-    callStopPrice := na
-    callT1Final := na
-    callT2Final := na
-    callT3Final := na
-    callT1Hit := false
-    callT2Hit := false
-    callEntryMode := ""
-    callEntryBar := na
-    callEarlyFiredToday := false
-    callEarlyLocked := false
-    callGapPending := false
-    putState := TradeState.IDLE
-    putEntryPrice := na
-    putStopPrice := na
-    putT1Final := na
-    putT2Final := na
-    putT3Final := na
-    putT1Hit := false
-    putT2Hit := false
-    putEntryMode := ""
-    putEntryBar := na
-    putEarlyFiredToday := false
-    putEarlyLocked := false
-    putGapPending := false
-    callSpikeAlertFired := false
-    putSpikeAlertFired := false
-    callVolumeAlertFired := false
-    putVolumeAlertFired := false
-    callMiddayAlertFired := false
-    putMiddayAlertFired := false
-    callSlippageAlertFired := false
-    putSlippageAlertFired := false
-    haltAlertFired := false
-    callEventHandled_Early := false
-    callEventHandled_GapPend := false
-    callEventHandled_Entry := false
-    callEventHandled_T1 := false
-    callEventHandled_T2 := false
-    callEventHandled_Stop := false
-    callEventHandled_Exit := false
-    putEventHandled_Early := false
-    putEventHandled_GapPend := false
-    putEventHandled_Entry := false
-    putEventHandled_T1 := false
-    putEventHandled_T2 := false
-    putEventHandled_Stop := false
-    putEventHandled_Exit := false
-    callMissedAlertFired := false
-    putMissedAlertFired := false
+                targetDist = math.abs(targetPrice - entryLevel)
+                t1Final := isCall ? entryPrice + targetDist * T1_PCT : entryPrice - targetDist * T1_PCT
+                t2Final := targetPrice
 
+                entryMode := 'CONFIRMED'
+                entryBar := bar_index
+                localGapPending := false
+                hadTrade := true
+                state := TradeState.IN_TRADE
+                array.push(eventQueue, TradeEvent.ENTRY)
 
-// Replay label
-if not barstate.isrealtime and barstate.islast and showLabels and (not showLabelsOnSPYOnly or isSPY)
-    label.new(bar_index, priceHigh + (priceHigh - priceLow) * 0.5, "⚠️ REPLAY", style=label.style_label_down, color=color.gray, textcolor=color.white, size=size.normal)
+        else if state == TradeState.EARLY
+            if earlyDropCondition
+                state := TradeState.IDLE
+                earlyFired := false
 
-// Config lock label
+            if entryReady
+                returnWasFirstTrade := not hadTrade
+                entryPrice := entryLevel
+                stopOffset = entryLevel * (stopOffsetPct / 100)
+                stopPrice := isCall ? entryPrice - stopOffset : entryPrice + stopOffset
+
+                targetDist = math.abs(targetPrice - entryLevel)
+                t1Final := isCall ? entryPrice + targetDist * T1_PCT : entryPrice - targetDist * T1_PCT
+                t2Final := targetPrice
+
+                entryMode := lotoReady ? 'LOTO' : 'CONFIRMED'
+                entryBar := bar_index
+                localGapPending := false
+                hadTrade := true
+                state := TradeState.IN_TRADE
+                array.push(eventQueue, TradeEvent.ENTRY)
+
+            else if entryCond and validTarget
+                returnWasFirstTrade := not hadTrade
+                entryPrice := entryLevel
+                stopOffset = entryLevel * (stopOffsetPct / 100)
+                stopPrice := isCall ? entryPrice - stopOffset : entryPrice + stopOffset
+
+                targetDist = math.abs(targetPrice - entryLevel)
+                t1Final := isCall ? entryPrice + targetDist * T1_PCT : entryPrice - targetDist * T1_PCT
+                t2Final := targetPrice
+
+                entryMode := 'CONFIRMED'
+                entryBar := bar_index
+                localGapPending := false
+                hadTrade := true
+                state := TradeState.IN_TRADE
+                array.push(eventQueue, TradeEvent.ENTRY)
+
+        else if state == TradeState.IN_TRADE
+            if bar_index >= entryBar
+                if stopCond
+                    state := TradeState.EXITED
+                    exitBar := bar_index
+                    array.push(eventQueue, TradeEvent.STOP)
+
+                else if isExpired or forceExit
+                    state := TradeState.EXITED
+                    exitBar := bar_index
+                    array.push(eventQueue, TradeEvent.FORCE_EXIT)
+
+                else
+                    if t2Cond
+                        if not partialTaken
+                            partialTaken := true
+                            array.push(eventQueue, TradeEvent.T1)
+
+                        state := TradeState.EXITED
+                        exitBar := bar_index
+                        array.push(eventQueue, TradeEvent.T2)
+
+                        if not na(t1Final) and not na(stopPrice)
+                            stopPrice := isCall ? math.max(t1Final, stopPrice) : math.min(t1Final, stopPrice)
+
+                    else
+                        if t1Cond and not partialTaken
+                            partialTaken := true
+                            array.push(eventQueue, TradeEvent.T1)
+
+                        if partialTaken
+                            trailOffset = entryPrice * (trailPct / 100)
+                            newTrailStop = isCall ? tickerHigh - trailOffset : tickerLow + trailOffset
+                            stopPrice := isCall ? math.max(stopPrice, newTrailStop) : math.min(stopPrice, newTrailStop)
+
+        else if state == TradeState.EXITED
+            if bar_index > exitBar
+                state := TradeState.IDLE
+                partialTaken := false
+                entryBar := na
+                entryPrice := na
+                stopPrice := na
+                t1Final := na
+                t2Final := na
+                t2Final
+
+        // Persist state back to arrays
+        array.set(stateArr, tickerIdx, state)
+        array.set(entryModeArr, tickerIdx, entryMode)
+        array.set(entryBarArr, tickerIdx, entryBar)
+        array.set(exitBarArr, tickerIdx, exitBar)
+        array.set(entryPriceArr, tickerIdx, entryPrice)
+        array.set(stopPriceArr, tickerIdx, stopPrice)
+        array.set(t1FinalArr, tickerIdx, t1Final)
+        array.set(t2FinalArr, tickerIdx, t2Final)
+        array.set(earlyFiredArr, tickerIdx, earlyFired)
+        array.set(gapPendingArr, tickerIdx, localGapPending)
+        array.set(hadTradeArr, tickerIdx, hadTrade)
+        array.set(partialTakenArr, tickerIdx, partialTaken)
+
+        returnEntryMode := entryMode
+        returnEntryPrice := entryPrice
+        returnStopPrice := stopPrice
+        returnT1 := t1Final
+        returnT2 := t2Final
+
+    [returnEntryMode, returnEntryPrice, returnStopPrice, returnT1, returnT2, returnDte, returnPrice, returnWasFirstTrade]
+
+// ============================================================================
+// EVENT HANDLER FUNCTION
+// ============================================================================
+handleEvent(evt, dir, sym, k, exp, mode, entryLevel, price, stop, t1, t2, dte, cur, first, matchChart) =>
+    side = dir == TradeDir.CALL ? 'C' : 'P'
+    verbBreak = dir == TradeDir.CALL ? 'Breaks ABOVE' : 'Breaks BELOW'
+
+    if evt != TradeEvent.NONE
+        // Process alerts on confirmed bars only
+        if isConfirmedBar
+            if evt == TradeEvent.GAP_PENDING and showWarningAlerts
+                alert('[GAP PENDING] ' + sym + ' | $' + str.tostring(k, '#.##') + side + ' | Gapped ' + (dir == TradeDir.CALL ? 'UP through' : 'DOWN through') + ' $' + str.tostring(entryLevel, '#.##') + ' | Entry queued after cooldown', alert.freq_once_per_bar)
+
+            if evt == TradeEvent.EARLY
+                alert('[EARLY] ' + sym + ' | $' + str.tostring(k, '#.##') + side + ' ' + exp + ' | Price $' + str.tostring(cur, '#.##') + ' | Approaching $' + str.tostring(entryLevel, '#.##'), alert.freq_once_per_bar)
+
+            if evt == TradeEvent.ENTRY and (mode == 'LOTO' or mode == 'CONFIRMED' or first)
+                alertMsg = '[' + mode + '] ' + sym + ' | $' + str.tostring(k, '#.##') + side + ' ' + exp + ' (' + dteStr(dte) + ') | ' + verbBreak + ' $' + str.tostring(entryLevel, '#.##') + ' | Entry $' + str.tostring(price, '#.##') + ' | Stop $' + str.tostring(stop, '#.##') + ' | T1 $' + str.tostring(t1, '#.##') + ' | T2 $' + str.tostring(t2, '#.##')
+                if mode == 'LOTO'
+                    alert(alertMsg, alert.freq_once_per_bar)
+                else
+                    alert(alertMsg, alert.freq_once_per_bar_close)
+
+            if evt == TradeEvent.T1
+                alert('[T1 HIT – TRIM ' + str.tostring(partialExitPct) + '%] ' + sym + ' | $' + str.tostring(k, '#.##') + side + ' | Lock profits, runners to T2 $' + str.tostring(t2, '#.##'), alert.freq_once_per_bar)
+
+            if evt == TradeEvent.T2
+                alert('[TARGET] ' + sym + ' | $' + str.tostring(k, '#.##') + side + ' ' + exp + ' | Hit $' + str.tostring(t2, '#.##') + ' | CLOSE POSITION | Mode: ' + mode, alert.freq_once_per_bar)
+
+            if evt == TradeEvent.STOP
+                alert('[STOP] ' + sym + ' | $' + str.tostring(k, '#.##') + side + ' ' + exp + ' | Stopped $' + str.tostring(stop, '#.##') + ' | Mode: ' + mode, alert.freq_once_per_bar)
+
+            if evt == TradeEvent.FORCE_EXIT
+                alert('[FORCE EXIT] ' + sym + ' | $' + str.tostring(k, '#.##') + side + ' ' + exp + ' | EXIT NOW - Market closing', alert.freq_once_per_bar)
+
+        // Create labels for all bars (historical and live) when matchChart is true
+        if matchChart
+            if evt == TradeEvent.GAP_PENDING
+                labelPos = dir == TradeDir.CALL ? high : low
+                labelStyle = dir == TradeDir.CALL ? label.style_label_down : label.style_label_up
+                label.new(bar_index, labelPos, 'GAP', style = labelStyle, color = color.new(color.gray, 30), textcolor = color.white, size = size.small, tooltip = 'GAP PENDING ' + sym + ' | $' + str.tostring(k, '#.##') + side + ' | ' + (dir == TradeDir.CALL ? 'above' : 'below') + ' $' + str.tostring(entryLevel, '#.##'))
+
+            if evt == TradeEvent.EARLY
+                labelPos = dir == TradeDir.CALL ? high : low
+                labelStyle = dir == TradeDir.CALL ? label.style_label_down : label.style_label_up
+                label.new(bar_index, labelPos, 'EARLY', style = labelStyle, color = color.new(color.yellow, 20), textcolor = color.black, size = size.small, tooltip = 'EARLY ' + sym + ' $' + str.tostring(k, '#.##') + side + ' | Approaching $' + str.tostring(entryLevel, '#.##'))
+
+            if evt == TradeEvent.ENTRY
+                lblText = mode == 'LOTO' ? 'LOTO' : mode == 'BREAK' ? 'BREAK' : 'CONFIRMED'
+                lblColor = mode == 'LOTO' ? color.new(color.orange, 0) : color.new(color.green, 0)
+                labelPos = dir == TradeDir.CALL ? low : high
+                labelStyle = dir == TradeDir.CALL ? label.style_label_up : label.style_label_down
+                label.new(bar_index, labelPos, lblText, style = labelStyle, color = lblColor, textcolor = color.white, size = size.small, tooltip = '[' + mode + '] ' + sym + ' $' + str.tostring(k, '#.##') + side + ' ' + dteStr(dte) + ' | Entry $' + str.tostring(price, '#.##') + ' | Stop $' + str.tostring(stop, '#.##') + ' | T1 $' + str.tostring(t1, '#.##') + ' | T2 $' + str.tostring(t2, '#.##'))
+
+            if evt == TradeEvent.T1
+                labelPos = dir == TradeDir.CALL ? high : low
+                labelStyle = dir == TradeDir.CALL ? label.style_label_down : label.style_label_up
+                label.new(bar_index, labelPos, 'T1', style = labelStyle, color = color.new(color.blue, 20), textcolor = color.white, size = size.small, tooltip = 'T1 HIT ' + sym + ' | $' + str.tostring(t1, '#.##'))
+
+            if evt == TradeEvent.T2
+                labelPos = dir == TradeDir.CALL ? high : low
+                labelStyle = dir == TradeDir.CALL ? label.style_label_down : label.style_label_up
+                label.new(bar_index, labelPos, 'TARGET', style = labelStyle, color = color.new(color.green, 0), textcolor = color.white, size = size.small, tooltip = 'TARGET ' + sym + ' | $' + str.tostring(t2, '#.##') + ' | CLOSE')
+
+            if evt == TradeEvent.STOP
+                labelPos = dir == TradeDir.CALL ? low : high
+                labelStyle = dir == TradeDir.CALL ? label.style_label_up : label.style_label_down
+                label.new(bar_index, labelPos, 'STOP', style = labelStyle, color = color.new(color.red, 0), textcolor = color.white, size = size.small, tooltip = 'STOP ' + sym + ' | $' + str.tostring(stop, '#.##'))
+
+            if evt == TradeEvent.FORCE_EXIT
+                labelPos = dir == TradeDir.CALL ? high : low
+                labelStyle = dir == TradeDir.CALL ? label.style_label_down : label.style_label_up
+                label.new(bar_index, labelPos, 'EXIT', style = labelStyle, color = color.new(color.purple, 0), textcolor = color.white, size = size.small, tooltip = 'FORCE EXIT ' + sym)
+
+// ============================================================================
+// INITIALIZATION & SETUP - Parse expiry dates
+// ============================================================================
+t1_expTs = parseExp(t1_exp)
+t2_expTs = parseExp(t2_exp)
+t3_expTs = parseExp(t3_exp)
+t4_expTs = parseExp(t4_exp)
+t5_expTs = parseExp(t5_exp)
+
+var stateArr = array.new<TradeState>(5, TradeState.IDLE)
+var array<string> entryModeArr = array.new_string(5, '')
+var array<int> entryBarArr = array.new_int(5, na)
+var array<float> entryPriceArr = array.new_float(5, na)
+var array<float> stopPriceArr = array.new_float(5, na)
+var array<float> t1FinalArr = array.new_float(5, na)
+var array<float> t2FinalArr = array.new_float(5, na)
+var array<bool> earlyFiredArr = array.new_bool(5, false)
+var array<bool> gapPendingArr = array.new_bool(5, false)
+var array<bool> hadTradeArr = array.new_bool(5, false)
+var array<bool> partialTakenArr = array.new_bool(5, false)
+var array<int> exitBarArr = array.new_int(5, na)
+
+var array<TradeEvent> eventQueue1 = array.new<TradeEvent>()
+var array<TradeEvent> eventQueue2 = array.new<TradeEvent>()
+var array<TradeEvent> eventQueue3 = array.new<TradeEvent>()
+var array<TradeEvent> eventQueue4 = array.new<TradeEvent>()
+var array<TradeEvent> eventQueue5 = array.new<TradeEvent>()
+
+// Reset all ticker states at start of each trading day
+if ta.change(time('D', 'America/New_York')) != 0
+    for i = 0 to 4 by 1
+        array.set(stateArr, i, TradeState.IDLE)
+        array.set(entryModeArr, i, '')
+        array.set(entryBarArr, i, na)
+        array.set(entryPriceArr, i, na)
+        array.set(stopPriceArr, i, na)
+        array.set(t1FinalArr, i, na)
+        array.set(t2FinalArr, i, na)
+        array.set(earlyFiredArr, i, false)
+        array.set(gapPendingArr, i, false)
+        array.set(hadTradeArr, i, false)
+        array.set(partialTakenArr, i, false)
+        array.set(exitBarArr, i, na)
+    array.clear(eventQueue1)
+    array.clear(eventQueue2)
+    array.clear(eventQueue3)
+    array.clear(eventQueue4)
+    array.clear(eventQueue5)
+
+dir1 = dirFromInput(t1_dir)
+dir2 = dirFromInput(t2_dir)
+dir3 = dirFromInput(t3_dir)
+dir4 = dirFromInput(t4_dir)
+dir5 = dirFromInput(t5_dir)
+
+// ============================================================================
+// MAIN EXECUTION - Process each ticker and generate events
+// ============================================================================
+[mode1, price1, stop1, t1_1, t2_1, dte1, cur1, first1] = processTicker(0, t1_on, t1_sym, t1_expTs, t1_res, t1_tgt, dir1, stateArr, entryModeArr, entryBarArr, entryPriceArr, stopPriceArr, t1FinalArr, t2FinalArr, exitBarArr, eventQueue1, earlyFiredArr, gapPendingArr, hadTradeArr, partialTakenArr)
+[mode2, price2, stop2, t1_2, t2_2, dte2, cur2, first2] = processTicker(1, t2_on, t2_sym, t2_expTs, t2_res, t2_tgt, dir2, stateArr, entryModeArr, entryBarArr, entryPriceArr, stopPriceArr, t1FinalArr, t2FinalArr, exitBarArr, eventQueue2, earlyFiredArr, gapPendingArr, hadTradeArr, partialTakenArr)
+[mode3, price3, stop3, t1_3, t2_3, dte3, cur3, first3] = processTicker(2, t3_on, t3_sym, t3_expTs, t3_res, t3_tgt, dir3, stateArr, entryModeArr, entryBarArr, entryPriceArr, stopPriceArr, t1FinalArr, t2FinalArr, exitBarArr, eventQueue3, earlyFiredArr, gapPendingArr, hadTradeArr, partialTakenArr)
+[mode4, price4, stop4, t1_4, t2_4, dte4, cur4, first4] = processTicker(3, t4_on, t4_sym, t4_expTs, t4_res, t4_tgt, dir4, stateArr, entryModeArr, entryBarArr, entryPriceArr, stopPriceArr, t1FinalArr, t2FinalArr, exitBarArr, eventQueue4, earlyFiredArr, gapPendingArr, hadTradeArr, partialTakenArr)
+[mode5, price5, stop5, t1_5, t2_5, dte5, cur5, first5] = processTicker(4, t5_on, t5_sym, t5_expTs, t5_res, t5_tgt, dir5, stateArr, entryModeArr, entryBarArr, entryPriceArr, stopPriceArr, t1FinalArr, t2FinalArr, exitBarArr, eventQueue5, earlyFiredArr, gapPendingArr, hadTradeArr, partialTakenArr)
+
+t1_match = showLabels and str.upper(t1_sym) == chartTicker
+t2_match = showLabels and str.upper(t2_sym) == chartTicker
+t3_match = showLabels and str.upper(t3_sym) == chartTicker
+t4_match = showLabels and str.upper(t4_sym) == chartTicker
+t5_match = showLabels and str.upper(t5_sym) == chartTicker
+
+// Process event queues for each ticker
+if array.size(eventQueue1) > 0
+    for i = 0 to array.size(eventQueue1) - 1 by 1
+        handleEvent(array.get(eventQueue1, i), dir1, t1_sym, t1_k, t1_exp, mode1, t1_res, price1, stop1, t1_1, t2_1, dte1, cur1, first1, t1_match)
+
+if array.size(eventQueue2) > 0
+    for i = 0 to array.size(eventQueue2) - 1 by 1
+        handleEvent(array.get(eventQueue2, i), dir2, t2_sym, t2_k, t2_exp, mode2, t2_res, price2, stop2, t1_2, t2_2, dte2, cur2, first2, t2_match)
+
+if array.size(eventQueue3) > 0
+    for i = 0 to array.size(eventQueue3) - 1 by 1
+        handleEvent(array.get(eventQueue3, i), dir3, t3_sym, t3_k, t3_exp, mode3, t3_res, price3, stop3, t1_3, t2_3, dte3, cur3, first3, t3_match)
+
+if array.size(eventQueue4) > 0
+    for i = 0 to array.size(eventQueue4) - 1 by 1
+        handleEvent(array.get(eventQueue4, i), dir4, t4_sym, t4_k, t4_exp, mode4, t4_res, price4, stop4, t1_4, t2_4, dte4, cur4, first4, t4_match)
+
+if array.size(eventQueue5) > 0
+    for i = 0 to array.size(eventQueue5) - 1 by 1
+        handleEvent(array.get(eventQueue5, i), dir5, t5_sym, t5_k, t5_exp, mode5, t5_res, price5, stop5, t1_5, t2_5, dte5, cur5, first5, t5_match)
+
+// Debug helper - Visual confirmation of events
+anyEvent = array.size(eventQueue1) > 0 or array.size(eventQueue2) > 0 or array.size(eventQueue3) > 0 or array.size(eventQueue4) > 0 or array.size(eventQueue5) > 0
+plotchar(anyEvent, 'EVENT', '•', location.top)
+
+// ============================================================================
+// VISUALIZATION - Plot entry and target lines (only for matching ticker chart)
+// ============================================================================
+showT1Lines = showLevelLines and t1_on and t1_res > 0 and str.upper(t1_sym) == chartTicker
+showT2Lines = showLevelLines and t2_on and t2_res > 0 and str.upper(t2_sym) == chartTicker
+showT3Lines = showLevelLines and t3_on and t3_res > 0 and str.upper(t3_sym) == chartTicker
+showT4Lines = showLevelLines and t4_on and t4_res > 0 and str.upper(t4_sym) == chartTicker
+showT5Lines = showLevelLines and t5_on and t5_res > 0 and str.upper(t5_sym) == chartTicker
+
+// Direction-aware colors: Green for CALLs, Red for PUTs
+t1_entryColor = entryColor(dir1)
+t1_targetColor = targetColor(dir1)
+t2_entryColor = entryColor(dir2)
+t2_targetColor = targetColor(dir2)
+t3_entryColor = entryColor(dir3)
+t3_targetColor = targetColor(dir3)
+t4_entryColor = entryColor(dir4)
+t4_targetColor = targetColor(dir4)
+t5_entryColor = entryColor(dir5)
+t5_targetColor = targetColor(dir5)
+
+plot(showT1Lines ? t1_res : na, 'T1 Entry', color = showT1Lines ? t1_entryColor : na, linewidth = 2, style = plot.style_linebr)
+plot(showT1Lines ? t1_tgt : na, 'T1 Target', color = showT1Lines ? t1_targetColor : na, linewidth = 2, style = plot.style_linebr)
+plot(showT2Lines ? t2_res : na, 'T2 Entry', color = showT2Lines ? t2_entryColor : na, linewidth = 2, style = plot.style_linebr)
+plot(showT2Lines ? t2_tgt : na, 'T2 Target', color = showT2Lines ? t2_targetColor : na, linewidth = 2, style = plot.style_linebr)
+plot(showT3Lines ? t3_res : na, 'T3 Entry', color = showT3Lines ? t3_entryColor : na, linewidth = 2, style = plot.style_linebr)
+plot(showT3Lines ? t3_tgt : na, 'T3 Target', color = showT3Lines ? t3_targetColor : na, linewidth = 2, style = plot.style_linebr)
+plot(showT4Lines ? t4_res : na, 'T4 Entry', color = showT4Lines ? t4_entryColor : na, linewidth = 2, style = plot.style_linebr)
+plot(showT4Lines ? t4_tgt : na, 'T4 Target', color = showT4Lines ? t4_targetColor : na, linewidth = 2, style = plot.style_linebr)
+plot(showT5Lines ? t5_res : na, 'T5 Entry', color = showT5Lines ? t5_entryColor : na, linewidth = 2, style = plot.style_linebr)
+plot(showT5Lines ? t5_tgt : na, 'T5 Target', color = showT5Lines ? t5_targetColor : na, linewidth = 2, style = plot.style_linebr)
+
+// Display config lock timestamp on chart
+anyTickerMatches = t1_on and str.upper(t1_sym) == chartTicker or t2_on and str.upper(t2_sym) == chartTicker or t3_on and str.upper(t3_sym) == chartTicker or t4_on and str.upper(t4_sym) == chartTicker or t5_on and str.upper(t5_sym) == chartTicker
+
 var label configLockLabel = na
-string lockText = "LOCKED " + str.format("{0,number,00}-{1,number,00} {2,number,00}:{3,number,00}", month(configLockTime), dayofmonth(configLockTime), hour(configLockTime), minute(configLockTime))
-if isSPY and barstate.islast
-    if na(configLockLabel)
-        configLockLabel := label.new(bar_index, high, lockText, style=label.style_label_upper_right, color=color.new(color.blue, 70), textcolor=color.white, size=size.small) 
+if anyTickerMatches and barstate.islast
+    configLockLabelText = 'LOCKED AT : ' + formatTimeComponent(month(configLockTime)) + '-' + formatTimeComponent(dayofmonth(configLockTime)) + ' ' + formatTimeComponent(hour(configLockTime)) + ':' + formatTimeComponent(minute(configLockTime)) + ':' + formatTimeComponent(second(configLockTime))
+    label.delete(configLockLabel)
+    configLockLabel := label.new(bar_index, high, configLockLabelText, style = label.style_label_upper_right, color = color.new(color.blue, 70), textcolor = color.white, size = size.small)
